@@ -6,7 +6,7 @@
 PriorityHelper = {}
 local DH = PriorityHelper
 
-DH.Version = "1.0.0"
+DH.Version = "1.1.0"
 
 -- Namespace for internal data
 local ns = {}
@@ -50,6 +50,43 @@ ns.UI = {
     MainFrame = nil,
     Buttons = {}
 }
+
+-- ============================================================================
+-- COOLDOWN SNOOZE SYSTEM
+-- When the addon recommends a major cooldown but the player uses a different
+-- ability instead, the CD recommendation is snoozed for a duration. If the
+-- player manually uses the CD, the snooze clears immediately.
+-- ============================================================================
+
+ns.snooze = {}          -- { [abilityKey] = expireTime }
+ns.lastRecommended = nil -- The first recommended ability key from last update
+
+-- Check if an ability is currently snoozed
+function DH:IsSnoozed(key)
+    local expires = ns.snooze[key]
+    if expires and GetTime() < expires then
+        return true
+    end
+    ns.snooze[key] = nil
+    return false
+end
+
+-- Snooze an ability for a duration (default 60s)
+function DH:Snooze(key, duration)
+    ns.snooze[key] = GetTime() + (duration or 60)
+end
+
+-- Clear snooze for an ability (player used it)
+function DH:ClearSnooze(key)
+    ns.snooze[key] = nil
+end
+
+-- Register an ability as snoozeable with a duration
+-- When recommended but skipped, it won't be recommended again for `duration` seconds
+ns.snoozeable = {}
+function DH:RegisterSnoozeable(key, duration)
+    ns.snoozeable[key] = duration or 60
+end
 
 -- ============================================================================
 -- REGISTRATION API
@@ -290,9 +327,8 @@ local function OnEvent(self, event, ...)
         local name = ...
         if name == "PriorityHelper" then
             DH:OnInitialize()
+            DH:OnEnable()
         end
-    elseif event == "PLAYER_LOGIN" then
-        DH:OnEnable()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.inCombat = true
         ns.combatStart = GetTime()
@@ -334,6 +370,9 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 
 -- Initialize addon
 function DH:OnInitialize()
+    if self._initialized then return end
+    self._initialized = true
+
     -- Load saved variables with merged defaults
     PriorityHelperDB = PriorityHelperDB or {}
     local defaults = BuildDefaults()
@@ -352,6 +391,9 @@ end
 
 -- Enable addon
 function DH:OnEnable()
+    if self._enabled then return end
+    self._enabled = true
+
     -- Register events
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -360,7 +402,9 @@ function DH:OnEnable()
     eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
     eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
     eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+
     eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    eventFrame:RegisterEvent("COMBAT_LOG_EVENT")
 
     -- Initialize state
     if self.State and self.State.Init then
@@ -524,6 +568,35 @@ end
 
 function DH:OnCombatLogEvent(timestamp, subevent, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, spellId, spellName, spellSchool, ...)
     if sourceGUID ~= UnitGUID("player") then return end
+
+    -- Snooze detection: when player uses any ability, check if they skipped a snoozeable recommendation
+    if subevent == "SPELL_CAST_SUCCESS" or subevent == "SPELL_DAMAGE" or subevent == "SPELL_AURA_APPLIED" then
+        local topRec = ns.recommendations[1]
+        if topRec and spellId then
+            local topAbility = topRec.ability
+            -- Find the ability key that matches the spell just used
+            local castKey = nil
+            local numericId = tonumber(spellId)
+            for key, ability in pairs(self.Class.abilities) do
+                if ability.id == numericId or ability.id == spellId then
+                    castKey = key
+                    break
+                end
+            end
+
+            if castKey then
+                -- Player used the snoozed ability — clear its snooze
+                if ns.snooze[castKey] then
+                    self:ClearSnooze(castKey)
+                end
+
+                -- Player used a different ability than recommended — snooze the recommended one
+                if castKey ~= topAbility and ns.snoozeable and ns.snoozeable[topAbility] then
+                    self:Snooze(topAbility, ns.snoozeable[topAbility])
+                end
+            end
+        end
+    end
 
     -- Dispatch to registered handlers
     for _, handler in ipairs(ns.registered.combatLogHandlers) do

@@ -233,35 +233,7 @@ end
 -- INITIALIZATION
 -- ============================================================================
 
-local origOnEnable = DH.OnEnable
-function DH:OnEnable()
-    origOnEnable(self)
-
-    -- Auto-select first mode if none saved
-    if not self.db.mode and #ns.registered.modes > 0 then
-        self.db.mode = ns.registered.modes[1].key
-    end
-
-    CreateMinimapButton()
-end
-
--- Inject minimap defaults before DB init
-local origOnInit = DH.OnInitialize
-function DH:OnInitialize()
-    local configDefaults = {
-        minimap = {
-            hide = false,
-            locked = false,
-            position = 225,
-        },
-        mode = nil,  -- Will be set to first registered mode on first load
-    }
-    for k, v in pairs(configDefaults) do
-        ns.registered.defaults[k] = ns.registered.defaults[k] or v
-    end
-
-    origOnInit(self)
-end
+-- No more hook chaining — Config.lua directly handles its setup at the bottom of the file
 
 -- Slash command to toggle minimap visibility
 DH:RegisterSlashCommand("minimap", function(cmd)
@@ -277,3 +249,72 @@ DH:RegisterSlashCommand("minimap", function(cmd)
         DH:Print("Minimap button: " .. (DH.db.minimap.hide and "hidden" or "shown"))
     end
 end, "minimap - Toggle minimap button visibility")
+
+-- ============================================================================
+-- DIRECT INITIALIZATION
+-- Config.lua is the last file in the TOC. ADDON_LOADED may fire before all
+-- files are loaded, so hook chaining is unreliable. Instead, inject our
+-- defaults and run setup directly here.
+-- ============================================================================
+
+-- Inject minimap defaults
+local configDefaults = {
+    minimap = {
+        hide = false,
+        locked = false,
+        position = 225,
+    },
+    mode = nil,
+}
+for k, v in pairs(configDefaults) do
+    ns.registered.defaults[k] = ns.registered.defaults[k] or v
+end
+
+-- If OnInitialize already ran (ADDON_LOADED fired early), re-merge defaults
+if DH.db then
+    local function MergeIfMissing(saved, defaults)
+        for k, v in pairs(defaults) do
+            if saved[k] == nil then
+                if type(v) == "table" then
+                    saved[k] = {}
+                    MergeIfMissing(saved[k], v)
+                else
+                    saved[k] = v
+                end
+            elseif type(v) == "table" and type(saved[k]) == "table" then
+                MergeIfMissing(saved[k], v)
+            end
+        end
+    end
+    MergeIfMissing(DH.db, configDefaults)
+end
+
+-- Auto-select first mode if none saved
+if DH.db and not DH.db.mode and #ns.registered.modes > 0 then
+    DH.db.mode = ns.registered.modes[1].key
+end
+
+-- If OnEnable already ran, create minimap button now
+-- If not, hook OnEnable to add our setup
+local origOnEnable = DH.OnEnable
+function DH:OnEnable()
+    origOnEnable(self)
+    if not self.db.mode and #ns.registered.modes > 0 then
+        self.db.mode = ns.registered.modes[1].key
+    end
+    CreateMinimapButton()
+end
+
+-- If OnEnable already ran (db exists, UI exists), create minimap button directly
+if DH.db and ns.UI.MainFrame then
+    CreateMinimapButton()
+end
+
+-- Force initialization if it hasn't happened yet
+-- Config.lua is the last TOC file, so everything is registered by now
+if not DH.db then
+    DH:OnInitialize()
+end
+if not ns.UI.MainFrame then
+    DH:OnEnable()
+end

@@ -61,8 +61,9 @@ local function GetRetributionRecommendations(addon)
         table.insert(queue, { ability = abilityKey, ready = ready, remains = remains })
     end
 
-    -- Avenging Wrath off CD
-    if s.cooldown.avenging_wrath.ready and not s.buff.avenging_wrath.up then
+    -- Avenging Wrath off CD (snoozeable - if player skips it, don't nag for 60s)
+    if s.cooldown.avenging_wrath.ready and not s.buff.avenging_wrath.up
+        and not DH:IsSnoozed("avenging_wrath") then
         if addRec(recommendations, "avenging_wrath") then return recommendations end
     end
 

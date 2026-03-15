@@ -337,6 +337,9 @@ DH:RegisterDefaults({
     },
 })
 
+-- Major cooldowns: snoozeable if player skips them (60s snooze)
+DH:RegisterSnoozeable("avenging_wrath", 60)
+
 -- ============================================================================
 -- SLASH COMMANDS
 -- ============================================================================
