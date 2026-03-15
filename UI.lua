@@ -155,7 +155,6 @@ function ns.UpdateUI(addon)
 
             -- For primary icon, show GCD sweep if no ability CD
             if i == 1 and not showSweep and state.gcd_remains > 0.1 then
-                -- Calculate GCD start from remains
                 local gcdDuration = state.gcd or 1.0
                 cdStart = GetTime() - (gcdDuration - state.gcd_remains)
                 cdDuration = gcdDuration
@@ -165,7 +164,6 @@ function ns.UpdateUI(addon)
             -- Apply cooldown sweep
             if showSweep and cdStart > 0 and cdDuration > 0 then
                 button.cooldown:SetCooldown(cdStart, cdDuration)
-                -- Show text only for long cooldowns (> 3 sec)
                 if cdDuration > 3 then
                     button.cooldownText:SetText(string.format("%.0f", cdStart + cdDuration - GetTime()))
                 else
@@ -176,20 +174,11 @@ function ns.UpdateUI(addon)
                 button.cooldownText:SetText("")
             end
 
-            -- Range check for melee abilities
+            -- Range check using registered melee abilities
             if i == 1 and addon.db.display.showRange then
-                local isMeleeAbility = abilityKey and (
-                    abilityKey:find("shred") or
-                    abilityKey:find("mangle") or
-                    abilityKey:find("rake") or
-                    abilityKey:find("rip") or
-                    abilityKey:find("swipe") or
-                    abilityKey:find("lacerate") or
-                    abilityKey:find("maul") or
-                    abilityKey:find("bite")
-                )
+                local isMelee = abilityKey and class.meleeAbilities[abilityKey]
 
-                if isMeleeAbility and state.target.exists and not state.target.inRange then
+                if isMelee and state.target.exists and not state.target.inRange then
                     button.rangeOverlay:Show()
                 else
                     button.rangeOverlay:Hide()
@@ -245,57 +234,26 @@ local function CreateDebugFrame()
     return frame
 end
 
--- Update debug frame
+-- Update debug frame - class modules can override this
 function ns.UpdateDebugFrame()
     if not DH.db or not DH.db.showDebugFrame then return end
     if not ns.DebugFrame then CreateDebugFrame() end
 
+    -- Use class-registered debug frame updater if available
+    if ns.registered.debugFrameUpdater then
+        ns.registered.debugFrameUpdater()
+        return
+    end
+
+    -- Generic fallback
     local s = DH.State
     local rec1 = ns.recommendations[1] and ns.recommendations[1].ability or "none"
     local rec2 = ns.recommendations[2] and ns.recommendations[2].ability or "none"
     local rec3 = ns.recommendations[3] and ns.recommendations[3].ability or "none"
 
-    -- Check why FF might be blocked
-    local ff_status = "?"
-    local ff_remains = s.cooldown.faerie_fire_feral.remains
-    if ff_remains > 0.1 then
-        ff_status = string.format("|cFFFF0000CD %.1f|r", ff_remains)
-    elseif s.buff.berserk.up then
-        ff_status = "|cFFFFFF00RDY(Bzk)|r"
-    elseif s.buff.clearcasting.up then
-        ff_status = "|cFFFFFF00RDY(CC)|r"
-    else
-        ff_status = "|cFF00FF00RDY!|r"
-    end
-
-    -- Bearweave status
-    local bw_status = ""
-    local bw_enabled = DH.db.feral_cat and DH.db.feral_cat.bearweave
-    if bw_enabled then
-        if s.bear_form then
-            bw_status = string.format("|cFFFF8800BEAR|r R:%d Lac:%d/%d",
-                s.rage.current,
-                s.debuff.lacerate.stacks or 0,
-                s.debuff.lacerate.up and math.floor(s.debuff.lacerate.remains) or 0)
-        else
-            -- Show when bearweave would trigger
-            local can_bw = s.energy.current < 40 and not s.buff.clearcasting.up
-                and (not s.debuff.rip.up or s.debuff.rip.remains > 4.5)
-                and not s.buff.berserk.up
-            if can_bw then
-                bw_status = "|cFF00FF00BW_RDY|r"
-            else
-                bw_status = "|cFF888888BW:wait|r"
-            end
-        end
-    end
-
     local lines = {
         "|cFFFFFF00=== Live Debug ===|r",
-        string.format("E: %d | CP: %d | GCD: %.2f", s.energy.current, s.combo_points.current, s.gcd_remains),
-        string.format("Berserk: %s | CC: %s", s.buff.berserk.up and "|cFFFF0000UP|r" or "no", s.buff.clearcasting.up and "|cFF00FF00UP|r" or "no"),
-        string.format("FF: %s %s", ff_status, bw_status),
-        string.format("SR:%.1f Rip:%.1f Rake:%.1f", s.buff.savage_roar.remains, s.debuff.rip.remains, s.debuff.rake.remains),
+        string.format("Spec: %s", DH:GetActiveSpec()),
         string.format("|cFFFFFF00Rec: %s > %s > %s|r", rec1, rec2, rec3),
     }
 

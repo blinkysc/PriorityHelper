@@ -2,11 +2,11 @@
 ## Version: 1.0.0
 ## Title: DruidHelper
 ## Author: Custom
-## Notes: Priority rotation helper for Druid specs (Feral Cat, Feral Bear, Balance)
+## Notes: Priority rotation helper (Druid specs: Feral Cat, Feral Bear, Balance)
 ## SavedVariables: DruidHelperDB
 
 DruidHelper.lua
 State.lua
-Druid.lua
-Core.lua
 UI.lua
+Classes\Druid\Druid.lua
+Classes\Druid\Core.lua

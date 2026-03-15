@@ -1,11 +1,6 @@
 -- DruidHelper.lua
--- Standalone rotation helper for WotLK 3.3.5a Druids
--- No external library dependencies
-
--- Only load for Druids
-if select(2, UnitClass("player")) ~= "DRUID" then
-    return
-end
+-- Rotation helper framework for WotLK 3.3.5a
+-- Class modules register their data via the registration API
 
 -- Create addon namespace
 DruidHelper = {}
@@ -26,15 +21,19 @@ ns.auras = {
     player = { buff = {}, debuff = {} }
 }
 
+-- Player class (detected at load time)
+DH.playerClass = select(2, UnitClass("player"))
+
 -- Class data structure
 DH.Class = {
-    file = "DRUID",
+    file = DH.playerClass,
     resources = {},
     talents = {},
     glyphs = {},
     auras = {},
     abilities = {},
     abilityByName = {},
+    meleeAbilities = {},  -- Keys of abilities that are melee range
     range = 5,
     settings = {},
 }
@@ -52,11 +51,147 @@ ns.UI = {
     Buttons = {}
 }
 
--- Default settings
-local defaults = {
+-- ============================================================================
+-- REGISTRATION API
+-- Class modules use these to register their data into the framework.
+-- ============================================================================
+
+-- Registered class data (populated by class modules)
+ns.registered = {
+    buffs = {},           -- List of buff keys to track
+    debuffs = {},         -- List of debuff keys to track
+    cooldowns = {},       -- { key = spellId } for cooldown tracking
+    talents = {},         -- { { tab, index, key }, ... }
+    glyphs = {},          -- { [glyphSpellId] = key, ... }
+    buffMap = {},         -- { [spellId] = buffKey, ... }
+    debuffMap = {},       -- { [spellId] = debuffKey, ... }
+    externalDebuffMap = {},  -- { [spellId] = debuffKey, ... }
+    debuffNamePatterns = {},  -- { { pattern, key }, ... } for name-based fallback
+    externalDebuffNamePatterns = {},  -- same for external debuffs
+    combatLogHandlers = {},  -- Functions called on COMBAT_LOG_EVENT_UNFILTERED
+    formHandlers = {},    -- { formId = { update = fn, spec = fn }, ... }
+    specDetector = nil,   -- Function that returns current spec string
+    rotations = {},       -- { specKey = fn(addon), ... } returns recommendations
+    gcdSpellId = nil,     -- Spell ID used to check GCD
+    defaults = {},        -- Class-specific default settings
+}
+
+-- Register buff keys to track
+function DH:RegisterBuffs(buffs)
+    for _, buff in ipairs(buffs) do
+        table.insert(ns.registered.buffs, buff)
+    end
+end
+
+-- Register debuff keys to track
+function DH:RegisterDebuffs(debuffs)
+    for _, debuff in ipairs(debuffs) do
+        table.insert(ns.registered.debuffs, debuff)
+    end
+end
+
+-- Register cooldowns: { key = spellId, ... }
+function DH:RegisterCooldowns(cooldowns)
+    for key, spellId in pairs(cooldowns) do
+        ns.registered.cooldowns[key] = spellId
+    end
+end
+
+-- Register talents: { { tab, index, key }, ... }
+function DH:RegisterTalents(talents)
+    for _, data in ipairs(talents) do
+        table.insert(ns.registered.talents, data)
+    end
+end
+
+-- Register glyphs: { [glyphSpellId] = key, ... }
+function DH:RegisterGlyphs(glyphs)
+    for spellId, key in pairs(glyphs) do
+        ns.registered.glyphs[spellId] = key
+    end
+end
+
+-- Register buff spell ID mapping: { [spellId] = buffKey, ... }
+function DH:RegisterBuffMap(map)
+    for spellId, key in pairs(map) do
+        ns.registered.buffMap[spellId] = key
+    end
+end
+
+-- Register debuff spell ID mapping: { [spellId] = debuffKey, ... }
+function DH:RegisterDebuffMap(map)
+    for spellId, key in pairs(map) do
+        ns.registered.debuffMap[spellId] = key
+    end
+end
+
+-- Register external debuff mapping (from other players)
+function DH:RegisterExternalDebuffMap(map)
+    for spellId, key in pairs(map) do
+        ns.registered.externalDebuffMap[spellId] = key
+    end
+end
+
+-- Register debuff name patterns for fallback matching
+function DH:RegisterDebuffNamePatterns(patterns)
+    for _, data in ipairs(patterns) do
+        table.insert(ns.registered.debuffNamePatterns, data)
+    end
+end
+
+-- Register external debuff name patterns
+function DH:RegisterExternalDebuffNamePatterns(patterns)
+    for _, data in ipairs(patterns) do
+        table.insert(ns.registered.externalDebuffNamePatterns, data)
+    end
+end
+
+-- Register combat log handler function
+function DH:RegisterCombatLogHandler(fn)
+    table.insert(ns.registered.combatLogHandlers, fn)
+end
+
+-- Register spec detector function
+function DH:RegisterSpecDetector(fn)
+    ns.registered.specDetector = fn
+end
+
+-- Register rotation function for a spec key
+function DH:RegisterRotation(specKey, fn)
+    ns.registered.rotations[specKey] = fn
+end
+
+-- Register GCD reference spell
+function DH:RegisterGCDSpell(spellId)
+    ns.registered.gcdSpellId = spellId
+end
+
+-- Register abilities that are melee range (for UI range overlay)
+function DH:RegisterMeleeAbilities(keys)
+    for _, key in ipairs(keys) do
+        DH.Class.meleeAbilities[key] = true
+    end
+end
+
+-- Register class-specific default settings (merged into defaults)
+function DH:RegisterDefaults(classDefaults)
+    ns.registered.defaults = classDefaults
+end
+
+-- Register form update handler
+function DH:RegisterFormHandler(formId, handler)
+    ns.registered.formHandlers[formId] = handler
+end
+
+-- ============================================================================
+-- SETTINGS
+-- ============================================================================
+
+-- Core default settings (class-agnostic)
+local coreDefaults = {
     enabled = true,
     debug = false,
-    showDebugFrame = false,  -- On-screen debug info
+    showDebugFrame = false,
     locked = false,
     display = {
         scale = 1.0,
@@ -68,31 +203,6 @@ local defaults = {
         showRange = true,
         numIcons = 3,
     },
-    feral_cat = {
-        enabled = true,
-        min_bite_rip_remains = 10,
-        min_bite_sr_remains = 8,
-        max_bite_energy = 65,
-        ferociousbite_enabled = true,
-        optimize_rake = true,
-        rip_leeway = 0,
-        min_roar_offset = 3,
-        -- Advanced tactics
-        bearweave = false,  -- Shift to bear when energy-starved (Lacerateweave)
-    },
-    feral_bear = {
-        enabled = true,
-        aoe_threshold = 3,
-    },
-    balance = {
-        enabled = true,
-        lunar_cooldown_leeway = 5,
-    },
-    common = {
-        bearweaving_enabled = false,
-        flowerweaving_enabled = false,
-        dummy_ttd = 300,
-    }
 }
 
 -- Deep copy function for defaults
@@ -124,6 +234,15 @@ local function MergeDefaults(saved, default)
     return saved
 end
 
+-- Build full defaults by merging core + class-specific
+local function BuildDefaults()
+    local defaults = DeepCopy(coreDefaults)
+    for k, v in pairs(ns.registered.defaults) do
+        defaults[k] = DeepCopy(v)
+    end
+    return defaults
+end
+
 -- Debug print
 function DH:Debug(msg, ...)
     if self.db and self.db.debug then
@@ -135,6 +254,10 @@ end
 function DH:Print(msg)
     print("|cFF00FF00DruidHelper:|r " .. msg)
 end
+
+-- ============================================================================
+-- EVENT HANDLING
+-- ============================================================================
 
 -- Main event frame
 local eventFrame = CreateFrame("Frame", "DruidHelperEventFrame", UIParent)
@@ -151,9 +274,6 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
         DH:UpdateRecommendations()
     end
 end)
-
--- Combat log event storage (3.3.5a passes args directly)
-local combatLogArgs = {}
 
 -- Event handler
 local function OnEvent(self, event, ...)
@@ -195,7 +315,6 @@ local function OnEvent(self, event, ...)
     elseif event == "UPDATE_SHAPESHIFT_FORM" then
         DH:UpdateRecommendations()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        -- 3.3.5a passes combat log args directly
         DH:OnCombatLogEvent(...)
     end
 end
@@ -206,8 +325,9 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 
 -- Initialize addon
 function DH:OnInitialize()
-    -- Load saved variables
+    -- Load saved variables with merged defaults
     DruidHelperDB = DruidHelperDB or {}
+    local defaults = BuildDefaults()
     self.db = MergeDefaults(DruidHelperDB, defaults)
     DruidHelperDB = self.db
 
@@ -245,7 +365,17 @@ function DH:OnEnable()
     eventFrame:Show()
 end
 
--- Slash command handler
+-- ============================================================================
+-- SLASH COMMANDS
+-- ============================================================================
+
+-- Registered slash command handlers from class modules
+ns.slashCommands = {}
+
+function DH:RegisterSlashCommand(cmd, handler, helpText)
+    ns.slashCommands[cmd] = { handler = handler, help = helpText }
+end
+
 function DH:SlashCommand(input)
     local cmd = string.lower(input or "")
 
@@ -282,81 +412,39 @@ function DH:SlashCommand(input)
         self:ShowUI()
         self:Print("Forced UI show")
     elseif cmd == "force" then
-        -- Force everything visible for debugging
         self:InitializeUI()
         if ns.UI.MainFrame then
             ns.UI.MainFrame:Show()
             ns.UI.MainFrame:SetAlpha(1)
             self:Print("MainFrame forced visible")
         end
-        -- Force test icons
-        local _, _, shredIcon = GetSpellInfo(48572)
+        local _, _, questionIcon = GetSpellInfo(1) -- fallback
         for i, button in ipairs(ns.UI.Buttons) do
-            button.icon:SetTexture(shredIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            button.icon:SetTexture(questionIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
             button:Show()
             self:Print("Button " .. i .. " forced visible")
         end
     elseif cmd == "test" then
         self:InitializeUI()
-        -- Force test recommendations using GetSpellInfo for textures
-        local _, _, shredIcon = GetSpellInfo(48572)
-        local _, _, rakeIcon = GetSpellInfo(48574)
-        local _, _, ripIcon = GetSpellInfo(49800)
-        local _, _, srIcon = GetSpellInfo(52610)
-        ns.recommendations = {
-            { ability = "shred", texture = shredIcon or "Interface\\Icons\\Ability_Druid_Disembowel", name = "Shred" },
-            { ability = "rake", texture = rakeIcon or "Interface\\Icons\\Ability_Druid_Disembowel", name = "Rake" },
-            { ability = "rip", texture = ripIcon or "Interface\\Icons\\Ability_GhoulFrenzy", name = "Rip" },
-            { ability = "savage_roar", texture = srIcon or "Interface\\Icons\\Ability_Druid_SavageRoar", name = "Savage Roar" },
-        }
+        -- Test with first 4 registered abilities
+        local testRecs = {}
+        local count = 0
+        for key, ability in pairs(self.Class.abilities) do
+            if count < 4 then
+                table.insert(testRecs, { ability = key, texture = ability.texture, name = ability.name })
+                count = count + 1
+            end
+        end
+        ns.recommendations = testRecs
         self:UpdateUI()
         self:ShowUI()
         self:Print("Test icons displayed")
     elseif cmd == "status" then
         self:Print("--- Status ---")
-        self:Print("Form: " .. tostring(GetShapeshiftForm()) .. " (1=Bear, 3=Cat, 5=Moonkin)")
+        self:Print("Class: " .. tostring(self.playerClass))
+        self:Print("Spec: " .. tostring(self:GetActiveSpec()))
         self:Print("Target: " .. tostring(UnitExists("target")) .. ", CanAttack: " .. tostring(UnitCanAttack("player", "target")))
         self:Print("Recommendations: " .. #ns.recommendations)
-    elseif cmd == "cat" then
-        -- Detailed cat status
-        local s = self.State
-        self:UpdateState()
-        self:Print("--- Cat Status ---")
-        self:Print("Energy: " .. tostring(s.energy.current) .. "/" .. tostring(s.energy.max))
-        self:Print("CP: " .. tostring(s.combo_points.current))
-        self:Print("SR: " .. (s.buff.savage_roar.up and ("UP " .. string.format("%.1f", s.buff.savage_roar.remains) .. "s") or "DOWN"))
-        self:Print("Rip: " .. (s.debuff.rip.up and ("UP " .. string.format("%.1f", s.debuff.rip.remains) .. "s") or "DOWN"))
-        self:Print("Rake: " .. (s.debuff.rake.up and ("UP " .. string.format("%.1f", s.debuff.rake.remains) .. "s") or "DOWN"))
-        self:Print("Mangle: " .. (s.debuff.mangle.up and ("UP " .. string.format("%.1f", s.debuff.mangle.remains) .. "s") or "DOWN"))
-        self:Print("Mangle talent: " .. tostring(s.talent.mangle.rank))
-        self:Print("TF ready: " .. tostring(s.cooldown.tigers_fury.ready) .. " (CD: " .. string.format("%.1f", s.cooldown.tigers_fury.remains) .. "s)")
-        self:Print("Berserk talent: " .. tostring(s.talent.berserk.rank) .. ", " .. (s.buff.berserk.up and "ACTIVE" or "ready=" .. tostring(s.cooldown.berserk.ready)))
-        self:Print("Clearcasting: " .. (s.buff.clearcasting.up and "UP" or "DOWN"))
-        self:Print("FF ready: " .. tostring(s.cooldown.faerie_fire_feral.ready) .. " (CD: " .. string.format("%.1f", s.cooldown.faerie_fire_feral.remains) .. "s)")
-        self:Print("OoC talent: " .. tostring(s.talent.omen_of_clarity.rank))
-        self:Print("Glyph Shred: " .. tostring(s.glyph.shred and s.glyph.shred.enabled))
-        self:Print("Rip Extensions: " .. tostring(ns.rip_extensions or 0) .. "/6")
-        self:Print("TTD: " .. tostring(s.target.time_to_die) .. "s")
-    elseif cmd == "debuffs" then
-        -- Show all debuffs on target for debugging
-        self:Print("--- Target Debuffs ---")
-        if UnitExists("target") then
-            for i = 1, 40 do
-                local name, rank, icon, count, debuffType, duration, expirationTime, source, _, _, spellId = UnitDebuff("target", i)
-                if not name then break end
-                local timeLeft = expirationTime and (expirationTime - GetTime()) or 0
-                self:Print(i .. ": " .. name .. " (ID:" .. tostring(spellId) .. ") src:" .. tostring(source) .. " " .. string.format("%.1f", timeLeft) .. "s")
-            end
-        else
-            self:Print("No target")
-        end
-        self:Print("--- Tracked State ---")
-        local s = self.State
-        self:Print("Rake: up=" .. tostring(s.debuff.rake.up) .. " remains=" .. string.format("%.1f", s.debuff.rake.remains))
-        self:Print("Rip: up=" .. tostring(s.debuff.rip.up) .. " remains=" .. string.format("%.1f", s.debuff.rip.remains))
-        self:Print("Mangle: up=" .. tostring(s.debuff.mangle.up) .. " remains=" .. string.format("%.1f", s.debuff.mangle.remains))
-    elseif cmd == "aoe" then
-        self:Print("AoE rotation not implemented - use single target rotation")
     elseif cmd == "live" then
         self.db.showDebugFrame = not self.db.showDebugFrame
         self:Print("Live debug: " .. (self.db.showDebugFrame and "ON" or "OFF"))
@@ -389,82 +477,54 @@ function DH:SlashCommand(input)
         else
             self:Print("Invalid. Use 1 to 4")
         end
-    elseif cmd == "bearweave" or cmd == "bw" then
-        self.db.feral_cat.bearweave = not self.db.feral_cat.bearweave
-        if self.db.feral_cat.bearweave then
-            self:Print("Bearweave: |cFF00FF00ON|r (Lacerateweave - maintain 5-stack Lacerate)")
-        else
-            self:Print("Bearweave: |cFFFF0000OFF|r (mono-cat rotation)")
-        end
-    elseif cmd == "bear" then
-        -- Detailed bear status for bearweaving
-        local s = self.State
-        self:UpdateState()
-        local enabled = self.db.feral_cat.bearweave
-        self:Print("--- Bear/Weave Status ---")
-        self:Print("Bearweave: " .. (enabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
-        self:Print("In Bear: " .. tostring(s.bear_form) .. " | In Cat: " .. tostring(s.cat_form))
-        self:Print("Energy: " .. tostring(s.energy.current) .. " | Rage: " .. tostring(s.rage.current))
-        self:Print("Furor talent: " .. tostring(s.talent.furor.rank) .. "/5")
-        self:Print("Mangle (Bear) CD: " .. (s.cooldown.mangle_bear.ready and "READY" or string.format("%.1fs", s.cooldown.mangle_bear.remains)))
-        self:Print("Lacerate: " .. (s.debuff.lacerate.up and (tostring(s.debuff.lacerate.stacks) .. " stacks, " .. string.format("%.1f", s.debuff.lacerate.remains) .. "s") or "DOWN"))
-        self:Print("Rip: " .. (s.debuff.rip.up and string.format("%.1f", s.debuff.rip.remains) .. "s" or "DOWN"))
-        self:Print("SR: " .. (s.buff.savage_roar.up and string.format("%.1f", s.buff.savage_roar.remains) .. "s" or "DOWN"))
     else
-        self:Print("Commands:")
-        self:Print("  /dh toggle - Enable/disable addon")
-        self:Print("  /dh show - Force show UI")
-        self:Print("  /dh status - Show debug status")
-        self:Print("  /dh lock - Lock/unlock display position")
-        self:Print("  /dh reset - Reset display position")
-        self:Print("  /dh scale <0.5-2.0> - Set display scale")
-        self:Print("  /dh debug - Toggle debug mode")
-        self:Print("  /dh bearweave - Toggle bearweaving (Lacerateweave)")
-        self:Print("  /dh live - Toggle live debug frame")
-    end
-end
-
--- Combat log handler (3.3.5a format - NO hideCaster or raidFlags in WotLK!)
--- Args: timestamp, event, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags,
---       [spellId, spellName, spellSchool], ...
-function DH:OnCombatLogEvent(timestamp, subevent, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, spellId, spellName, spellSchool, ...)
-    if sourceGUID ~= UnitGUID("player") then return end
-
-    -- Track Eclipse procs for Balance
-    if subevent == "SPELL_AURA_APPLIED" then
-        if spellId == 48518 then -- Eclipse (Lunar)
-            ns.eclipse_lunar_last_applied = GetTime()
-        elseif spellId == 48517 then -- Eclipse (Solar)
-            ns.eclipse_solar_last_applied = GetTime()
-        elseif spellId == 49800 then -- Rip applied
-            ns.rip_extensions = 0
-            ns.rip_target_guid = destGUID
-            ns.last_rip_applied = GetTime()
+        -- Try class-registered slash commands
+        local handled = false
+        for pattern, data in pairs(ns.slashCommands) do
+            if cmd == pattern or string.match(cmd, "^" .. pattern .. " ") or string.match(cmd, "^" .. pattern .. "$") then
+                data.handler(cmd)
+                handled = true
+                break
+            end
         end
-    elseif subevent == "SPELL_AURA_REFRESH" then
-        if spellId == 49800 then -- Rip refreshed
-            ns.rip_extensions = 0
-            ns.rip_target_guid = destGUID
-            ns.last_rip_applied = GetTime()
-        end
-    elseif subevent == "SPELL_DAMAGE" then
-        -- Glyph of Shred: Shred extends Rip by 2 sec (max 6 extensions)
-        if spellId == 48572 then -- Shred
-            if ns.rip_target_guid == destGUID and ns.rip_extensions < 6 then
-                if self.State.glyph.shred and self.State.glyph.shred.enabled then
-                    ns.rip_extensions = ns.rip_extensions + 1
+
+        if not handled then
+            self:Print("Commands:")
+            self:Print("  /dh toggle - Enable/disable addon")
+            self:Print("  /dh show - Force show UI")
+            self:Print("  /dh status - Show debug status")
+            self:Print("  /dh lock - Lock/unlock display position")
+            self:Print("  /dh reset - Reset display position")
+            self:Print("  /dh scale <0.5-2.0> - Set display scale")
+            self:Print("  /dh icons <1-4> - Set icon count")
+            self:Print("  /dh debug - Toggle debug mode")
+            self:Print("  /dh live - Toggle live debug frame")
+            -- Show class-registered commands
+            for pattern, data in pairs(ns.slashCommands) do
+                if data.help then
+                    self:Print("  /dh " .. data.help)
                 end
             end
         end
-    elseif subevent == "SPELL_AURA_REMOVED" then
-        if spellId == 49800 then -- Rip fell off
-            if destGUID == ns.rip_target_guid then
-                ns.rip_extensions = 0
-                ns.rip_target_guid = nil
-            end
-        end
     end
 end
+
+-- ============================================================================
+-- COMBAT LOG
+-- ============================================================================
+
+function DH:OnCombatLogEvent(timestamp, subevent, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, spellId, spellName, spellSchool, ...)
+    if sourceGUID ~= UnitGUID("player") then return end
+
+    -- Dispatch to registered handlers
+    for _, handler in ipairs(ns.registered.combatLogHandlers) do
+        handler(subevent, sourceGUID, destGUID, spellId, spellName, ...)
+    end
+end
+
+-- ============================================================================
+-- CORE LOGIC
+-- ============================================================================
 
 -- Update state
 function DH:UpdateState()
@@ -474,7 +534,15 @@ function DH:UpdateState()
     end
 end
 
--- Update recommendations
+-- Get active spec using registered detector
+function DH:GetActiveSpec()
+    if ns.registered.specDetector then
+        return ns.registered.specDetector()
+    end
+    return "unknown"
+end
+
+-- Update recommendations using registered rotations
 function DH:UpdateRecommendations()
     if not self.db or not self.db.enabled then return end
     if not UnitExists("target") and not ns.inCombat then return end
@@ -482,86 +550,27 @@ function DH:UpdateRecommendations()
     -- Ensure state is updated
     self:UpdateState()
 
-    -- Get current form and determine which rotation to use
-    local form = GetShapeshiftForm()
+    local spec = self:GetActiveSpec()
     local recommendations = {}
 
-    if form == 3 then -- Cat Form
-        recommendations = self:GetFeralCatRecommendations()
-    elseif form == 1 then -- Bear Form
-        -- If bearweaving is enabled, use cat rotation (handles bear abilities via bearweave logic)
-        if self.db.feral_cat and self.db.feral_cat.bearweave then
-            recommendations = self:GetFeralCatRecommendations()
-        else
-            recommendations = self:GetFeralBearRecommendations()
-        end
-    elseif form == 5 then -- Moonkin Form
-        recommendations = self:GetBalanceRecommendations()
-    else
-        -- Caster form - suggest shifting based on spec
-        local spec = self:GetActiveSpec()
-        if spec == "balance" then
-            local ability = self.Class.abilities.moonkin_form
-            recommendations = { { ability = "moonkin_form", texture = ability and ability.texture or select(3, GetSpellInfo(24858)) } }
-        else
-            local ability = self.Class.abilities.cat_form
-            recommendations = { { ability = "cat_form", texture = ability and ability.texture or select(3, GetSpellInfo(768)) } }
-        end
+    -- Try registered rotation for current spec
+    local rotationFn = ns.registered.rotations[spec]
+    if rotationFn then
+        recommendations = rotationFn(self)
     end
 
     ns.recommendations = recommendations
     self:UpdateUI()
 
-    -- Show UI if we have recommendations
     if #recommendations > 0 then
         self:ShowUI()
     end
 end
 
--- Get active spec based on talent points
-function DH:GetActiveSpec()
-    local balance, feral, resto = 0, 0, 0
+-- ============================================================================
+-- UI FUNCTIONS (implemented in UI.lua)
+-- ============================================================================
 
-    for i = 1, GetNumTalentTabs() do
-        local _, _, points = GetTalentTabInfo(i)
-        if i == 1 then balance = points
-        elseif i == 2 then feral = points
-        else resto = points
-        end
-    end
-
-    if balance > feral and balance > resto then
-        return "balance"
-    elseif feral > resto then
-        return "feral"
-    else
-        return "resto"
-    end
-end
-
--- Placeholder functions (implemented in Core.lua)
-function DH:GetFeralCatRecommendations()
-    if ns.GetFeralCatRecommendations then
-        return ns.GetFeralCatRecommendations(self)
-    end
-    return {}
-end
-
-function DH:GetFeralBearRecommendations()
-    if ns.GetFeralBearRecommendations then
-        return ns.GetFeralBearRecommendations(self)
-    end
-    return {}
-end
-
-function DH:GetBalanceRecommendations()
-    if ns.GetBalanceRecommendations then
-        return ns.GetBalanceRecommendations(self)
-    end
-    return {}
-end
-
--- UI functions (implemented in UI.lua)
 function DH:InitializeUI()
     if ns.InitializeUI then
         ns.InitializeUI(self)

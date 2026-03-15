@@ -1,5 +1,5 @@
--- Core.lua
--- Priority rotation logic for DruidHelper (3.3.5a compatible)
+-- Classes/Druid/Core.lua
+-- Priority rotation logic for Druid specs (3.3.5a compatible)
 
 local DH = DruidHelper
 if not DH then return end
@@ -75,25 +75,15 @@ end
 -- If Rip will expire shortly after SR, clip SR early to build 5 CP for Rip
 -- ============================================================================
 
--- Check if we need to clip SR early to prevent Rip desync
--- Returns true if SR should be refreshed early (even if it has time remaining)
 local function ShouldClipSRForDesync()
-    -- Only relevant if both SR and Rip are up
     if not sim.sr_up or not sim.rip_up then
         return false
     end
 
-    -- Time needed to build 5 CP (roughly 5 GCDs = 5 seconds minimum)
     local time_to_build_5cp = 5.0
-
-    -- Scenario: SR expires, then we need to rebuild 5 CP, but Rip expires during that time
-    -- If Rip expires within (SR_remains + time_to_build_5cp + 2), we have a conflict
     local conflict_window = sim.sr_remains + time_to_build_5cp + 2
 
-    -- If Rip will expire during this window, we need to clip SR now
     if sim.rip_remains < conflict_window and sim.rip_remains > sim.sr_remains then
-        -- Rip expires after SR but before we can rebuild 5 CP
-        -- Check if clipping would be within 10 sec limit
         if sim.sr_remains <= 10 then
             return true
         end
@@ -107,35 +97,27 @@ end
 -- Shift to bear when energy-starved to deal damage while regenerating
 -- ============================================================================
 
--- Check if we should enter bear form for bearweaving
 local function ShouldBearweave()
-    -- Must have Furor talent (5/5 for 10 rage on bear shift)
     if not sim.has_furor then
         return false
     end
 
-    -- Conditions from the guide:
-    -- 1. Less than 40 energy
     if sim.energy >= 40 then
         return false
     end
 
-    -- 2. No Clearcasting proc active (would waste free ability)
     if sim.clearcasting then
         return false
     end
 
-    -- 3. More than 4.5 seconds until Rip expires (safety margin)
     if sim.rip_up and sim.rip_remains < 4.5 then
         return false
     end
 
-    -- 4. Berserk is not active (spam cat abilities during Berserk)
     if sim.berserk then
         return false
     end
 
-    -- 5. SR should have enough time (need to get back to cat and use abilities)
     if sim.sr_up and sim.sr_remains < 4 then
         return false
     end
@@ -143,25 +125,19 @@ local function ShouldBearweave()
     return true
 end
 
--- Check if we should exit bear form back to cat
 local function ShouldExitBear()
-    -- Exit conditions:
-    -- 1. More than 70 energy (approaching cap)
     if sim.energy > 70 then
         return true
     end
 
-    -- 2. Rip will expire in less than 3 seconds
     if sim.rip_up and sim.rip_remains < 3 then
         return true
     end
 
-    -- 3. Clearcasting is active (use it in cat form)
     if sim.clearcasting then
         return true
     end
 
-    -- 4. SR about to expire
     if sim.sr_up and sim.sr_remains < 3 then
         return true
     end
@@ -170,14 +146,13 @@ local function ShouldExitBear()
 end
 
 -- Get next bear ability (Lacerateweave - maintains 5-stack Lacerate)
--- Focus purely on Lacerate bleed, exit to cat when it's healthy
 local function GetNextBearAbility()
     local has_rage = sim.rage >= 13 or sim.clearcasting
     local lacerate_emergency = sim.lacerate_up and sim.lacerate_remains < 3
     local lacerate_needs_stack = not sim.lacerate_up or sim.lacerate_stacks < 5
     local lacerate_needs_refresh = sim.lacerate_up and sim.lacerate_remains < 9
 
-    -- Priority 1: Emergency Lacerate refresh (don't let stacks fall off!)
+    -- Priority 1: Emergency Lacerate refresh
     if has_rage and lacerate_emergency then
         return "lacerate"
     end
@@ -192,19 +167,17 @@ local function GetNextBearAbility()
         return "lacerate"
     end
 
-    -- Priority 4: Refresh Lacerate if < 9 sec (comfortable window)
+    -- Priority 4: Refresh Lacerate if < 9 sec
     if has_rage and lacerate_needs_refresh then
         return "lacerate"
     end
 
     -- Priority 5: Lacerate is healthy (5 stacks, 9+ sec) - exit to cat
-    -- Now we can leave and use any CC proc in cat form
     if sim.lacerate_up and sim.lacerate_stacks == 5 and sim.lacerate_remains >= 9 then
         return "cat_form"
     end
 
-    -- Priority 6: Low rage - exit to cat (can't do anything useful)
-    -- Note: CC does NOT trigger exit - Lacerate maintenance takes priority
+    -- Priority 6: Low rage - exit to cat
     if sim.rage < 13 then
         return "cat_form"
     end
@@ -213,7 +186,6 @@ local function GetNextBearAbility()
     return "lacerate"
 end
 
--- Wrapper for bear ability
 local function GetNextBearweaveAbility()
     return GetNextBearAbility()
 end
@@ -222,7 +194,6 @@ end
 -- CAT ROTATION
 -- ============================================================================
 
--- Get next priority ability for single target
 local function GetNextCatAbility()
     local shred_cost = sim.berserk and 21 or 42
     local mangle_cost = sim.berserk and 17 or 35
@@ -230,36 +201,28 @@ local function GetNextCatAbility()
     local rip_cost = sim.berserk and 15 or 30
     local sr_cost = sim.berserk and 12 or 25
 
-    -- Pandemic windows: refresh when < X seconds remain (don't wait until expired)
     local rake_needs_refresh = not sim.rake_up or sim.rake_remains < 3
     local rip_needs_refresh = not sim.rip_up or sim.rip_remains < 2
     local sr_needs_refresh = not sim.sr_up or sim.sr_remains < 3
-    -- Skip Mangle if external bleed debuff (Trauma/other druid's Mangle) is up
     local mangle_needs_refresh = not sim.bleed_debuff_up and (not sim.mangle_up or sim.mangle_remains < 3)
 
-    -- SR/Rip desync check: clip SR early if Rip will expire shortly after SR
     local sr_desync_clip = ShouldClipSRForDesync()
 
-    -- Ferocious Bite conditions (should be rare - only when safe)
     local bite_cost = sim.berserk and 17 or 35
-    local min_bite_rip_remains = 10  -- Need 10+ sec on Rip to safely Bite
-    local min_bite_sr_remains = 8    -- Need 8+ sec on SR to safely Bite
+    local min_bite_rip_remains = 10
+    local min_bite_sr_remains = 8
 
-    -- bite_at_end: Use bite instead of Rip at end of fight
     local bite_at_end = sim.cp == 5 and (sim.ttd < 10 or (sim.rip_up and sim.ttd - sim.rip_remains < 10))
 
-    -- bite_before_rip: Safe to bite when Rip and SR have good duration
     local bite_before_rip = sim.cp == 5 and sim.rip_up and sim.sr_up
         and sim.rip_remains >= min_bite_rip_remains
         and sim.sr_remains >= min_bite_sr_remains
 
-    -- Can bite: either end of fight or safe window, not wasting clearcasting
-    -- NEVER during Berserk - spam Shred instead to maximize energy discount
     local can_bite = (bite_at_end or bite_before_rip)
         and not sim.clearcasting
-        and not sim.berserk  -- No bite during Berserk
+        and not sim.berserk
         and sim.energy >= bite_cost
-        and sim.energy < 67  -- Don't bite at high energy
+        and sim.energy < 67
 
     -- Priority 1: Tiger's Fury when < 40 Energy
     if sim.energy < 40 and sim.tf_ready and not sim.berserk then
@@ -273,7 +236,7 @@ local function GetNextCatAbility()
         end
     end
 
-    -- Priority 3: Savage Roar - either needs normal refresh OR desync clip
+    -- Priority 3: Savage Roar
     if (sr_needs_refresh or sr_desync_clip) and sim.cp >= 1 and sim.energy >= sr_cost then
         return "savage_roar"
     end
@@ -283,12 +246,12 @@ local function GetNextCatAbility()
         return "mangle_cat"
     end
 
-    -- Priority 5: Rip at 5 CP when needs refresh (but not at end of fight)
+    -- Priority 5: Rip at 5 CP when needs refresh
     if sim.cp == 5 and rip_needs_refresh and sim.ttd >= 10 and sim.energy >= rip_cost and not bite_at_end then
         return "rip"
     end
 
-    -- Priority 5b: Ferocious Bite at 5 CP when safe (Rip/SR have good duration) or end of fight
+    -- Priority 5b: Ferocious Bite at 5 CP when safe or end of fight
     if can_bite then
         return "ferocious_bite"
     end
@@ -298,24 +261,22 @@ local function GetNextCatAbility()
         return "rake"
     end
 
-    -- Priority 7: Clearcasting proc -> Shred (free shred!)
+    -- Priority 7: Clearcasting proc -> Shred
     if sim.clearcasting then
         return "shred"
     end
 
     -- Priority 8: Faerie Fire (Feral) for OoC procs
-    -- Use FF before Shred if not at max energy (avoid capping during GCD)
-    -- Skip during Berserk (spam abilities)
     if sim.ff_ready and not sim.berserk and sim.energy < 90 then
         return "faerie_fire_feral"
     end
 
-    -- Priority 9: Shred (if we have energy)
+    -- Priority 9: Shred
     if sim.energy >= shred_cost then
         return "shred"
     end
 
-    -- Priority 10: Bearweave if conditions met (energy starved, no CC, Rip safe, no Berserk)
+    -- Priority 10: Bearweave if conditions met
     local bearweave_enabled = DH.db and DH.db.feral_cat and DH.db.feral_cat.bearweave
     if bearweave_enabled and ShouldBearweave() then
         return "dire_bear_form"
@@ -325,14 +286,15 @@ local function GetNextCatAbility()
     return nil
 end
 
--- Simulate time passing (tick down buffs/debuffs, regen energy)
+-- ============================================================================
+-- SIMULATION
+-- ============================================================================
+
 local function SimulateTime(seconds)
     if seconds <= 0 then return end
 
-    -- Energy regen
     sim.energy = math.min(100, sim.energy + (ENERGY_REGEN * seconds))
 
-    -- Tick down buff/debuff timers
     if sim.sr_remains > 0 then
         sim.sr_remains = sim.sr_remains - seconds
         if sim.sr_remains <= 0 then
@@ -365,7 +327,6 @@ local function SimulateTime(seconds)
         end
     end
 
-    -- Tick down cooldowns
     if sim.tf_cd_remains > 0 then
         sim.tf_cd_remains = sim.tf_cd_remains - seconds
         if sim.tf_cd_remains <= 0 then
@@ -390,7 +351,6 @@ local function SimulateTime(seconds)
         end
     end
 
-    -- Tick down Lacerate
     if sim.lacerate_remains > 0 then
         sim.lacerate_remains = sim.lacerate_remains - seconds
         if sim.lacerate_remains <= 0 then
@@ -400,13 +360,11 @@ local function SimulateTime(seconds)
         end
     end
 
-    -- Tick down GCD
     if sim.gcd_remains > 0 then
         sim.gcd_remains = sim.gcd_remains - seconds
         if sim.gcd_remains < 0 then sim.gcd_remains = 0 end
     end
 
-    -- Berserk duration (15 sec)
     if sim.berserk and sim.berserk_remains then
         sim.berserk_remains = sim.berserk_remains - seconds
         if sim.berserk_remains <= 0 then
@@ -416,7 +374,6 @@ local function SimulateTime(seconds)
     end
 end
 
--- Simulate using an ability (update sim state)
 local function SimulateAbility(action)
     local shred_cost = sim.berserk and 21 or 42
     local mangle_cost = sim.berserk and 17 or 35
@@ -436,7 +393,7 @@ local function SimulateAbility(action)
     elseif action == "savage_roar" then
         sim.energy = sim.energy - sr_cost
         sim.sr_up = true
-        sim.sr_remains = 14 + (sim.cp * 5) -- Base 14 + 5 per CP
+        sim.sr_remains = 14 + (sim.cp * 5)
         sim.cp = 0
 
     elseif action == "mangle_cat" then
@@ -463,16 +420,14 @@ local function SimulateAbility(action)
     elseif action == "rip" then
         sim.energy = sim.energy - rip_cost
         sim.rip_up = true
-        sim.rip_remains = 12 + (sim.cp * 2) -- Roughly
+        sim.rip_remains = 12 + (sim.cp * 2)
         sim.cp = 0
 
     elseif action == "faerie_fire_feral" then
-        -- No energy cost, 6 sec CD
         sim.ff_ready = false
         sim.ff_cd_remains = 6
 
     elseif action == "ferocious_bite" then
-        -- Costs 35 energy base (17 during berserk) + converts up to 30 extra energy to damage
         local bite_cost = sim.berserk and 17 or 35
         local extra_energy = math.min(30, sim.energy - bite_cost)
         sim.energy = sim.energy - bite_cost - extra_energy
@@ -485,13 +440,11 @@ local function SimulateAbility(action)
             sim.energy = sim.energy - swipe_cost
         end
         sim.clearcasting = false
-        -- Swipe doesn't generate combo points
 
     -- Form shifts
     elseif action == "dire_bear_form" then
         sim.in_bear = true
         sim.in_cat = false
-        -- Furor gives 10 rage when shifting to bear (5/5)
         if sim.has_furor then
             sim.rage = 10
         end
@@ -499,7 +452,6 @@ local function SimulateAbility(action)
     elseif action == "cat_form" then
         sim.in_cat = true
         sim.in_bear = false
-        -- Furor gives 40 energy when shifting to cat (5/5)
         if sim.has_furor then
             sim.energy = math.min(100, sim.energy + FUROR_ENERGY)
         end
@@ -523,17 +475,18 @@ local function SimulateAbility(action)
         sim.clearcasting = false
 
     elseif action == "maul" then
-        -- Maul is queued for next swing, costs 15 rage
-        -- For sim purposes, just deduct rage
         sim.rage = sim.rage - 15
         if sim.clearcasting then sim.clearcasting = false end
     end
 
-    -- Simulate ~1 GCD passing (1 second)
     SimulateTime(1.0)
 end
 
-function ns.GetFeralCatRecommendations(addon)
+-- ============================================================================
+-- FERAL CAT RECOMMENDATIONS
+-- ============================================================================
+
+local function GetFeralCatRecommendations(addon)
     local recommendations = {}
     local s = state
 
@@ -553,19 +506,15 @@ function ns.GetFeralCatRecommendations(addon)
         return #recommendations >= 3
     end
 
-    -- Initialize simulated state from real state
     ResetSimState(s)
 
-    -- For first recommendation, account for current GCD remaining
     if sim.gcd_remains > 0 then
         SimulateTime(sim.gcd_remains)
     end
 
-    -- Get recommendations by simulating each ability
     for i = 1, 3 do
         local action
 
-        -- If we're in bear form (bearweaving), use bear rotation
         if sim.in_bear then
             action = GetNextBearweaveAbility()
         else
@@ -576,41 +525,34 @@ function ns.GetFeralCatRecommendations(addon)
             addRec(action)
             SimulateAbility(action)
         else
-            -- No action available (low energy in cat form)
             if sim.in_bear then
-                -- In bear with nothing to do, just wait a bit
                 SimulateTime(1.0)
             else
-                -- Find the cheapest maintenance ability that needs refresh
                 local rake_cost = sim.berserk and 17 or 35
                 local mangle_cost = sim.berserk and 17 or 35
                 local sr_cost = sim.berserk and 12 or 25
                 local rip_cost = sim.berserk and 15 or 30
                 local shred_cost = sim.berserk and 21 or 42
 
-                local needed_energy = shred_cost  -- Default to shred
+                local needed_energy = shred_cost
                 local rake_needs_refresh = not sim.rake_up or sim.rake_remains < 3
                 local mangle_needs_refresh = not sim.bleed_debuff_up and (not sim.mangle_up or sim.mangle_remains < 3)
                 local sr_needs_refresh = not sim.sr_up or sim.sr_remains < 3
                 local rip_needs_refresh = not sim.rip_up or sim.rip_remains < 2
 
-                -- Find lowest energy cost for what we need
                 if sr_needs_refresh and sim.cp >= 1 then needed_energy = math.min(needed_energy, sr_cost) end
                 if mangle_needs_refresh and sim.has_mangle_talent then needed_energy = math.min(needed_energy, mangle_cost) end
                 if rake_needs_refresh then needed_energy = math.min(needed_energy, rake_cost) end
                 if rip_needs_refresh and sim.cp == 5 then needed_energy = math.min(needed_energy, rip_cost) end
 
-                -- Wait for enough energy
                 local time_to_energy = math.max(0, (needed_energy - sim.energy) / ENERGY_REGEN)
                 SimulateTime(time_to_energy + 0.1)
 
-                -- Try again after waiting
                 action = GetNextCatAbility()
                 if action then
                     addRec(action)
                     SimulateAbility(action)
                 else
-                    -- Still nothing, just wait more
                     SimulateTime(1.0)
                 end
             end
@@ -624,7 +566,7 @@ end
 -- FERAL BEAR ROTATION
 -- ============================================================================
 
-function ns.GetFeralBearRecommendations(addon)
+local function GetFeralBearRecommendations(addon)
     local recommendations = {}
     local s = state
     local settings = addon.db.feral_bear
@@ -711,7 +653,7 @@ end
 -- BALANCE (MOONKIN) ROTATION
 -- ============================================================================
 
-function ns.GetBalanceRecommendations(addon)
+local function GetBalanceRecommendations(addon)
     local recommendations = {}
     local s = state
 
@@ -730,12 +672,10 @@ function ns.GetBalanceRecommendations(addon)
         end
     end
 
-    -- Eclipse state
     local lunar_up = s.buff.eclipse_lunar.up
     local solar_up = s.buff.eclipse_solar.up
     local elunes_wrath_up = s.buff.elunes_wrath.up
 
-    -- Eclipse ICD (30 seconds)
     local now = s.now
     local lunar_can_proc = s.buff.eclipse_lunar.last_applied == 0 or (now - s.buff.eclipse_lunar.last_applied) >= 30
     local solar_can_proc = s.buff.eclipse_solar.last_applied == 0 or (now - s.buff.eclipse_solar.last_applied) >= 30
@@ -810,3 +750,41 @@ function ns.GetBalanceRecommendations(addon)
 
     return recommendations
 end
+
+-- ============================================================================
+-- ROTATION DISPATCH
+-- Determines which rotation to use based on form and spec
+-- ============================================================================
+
+local function GetDruidRecommendations(addon)
+    local form = GetShapeshiftForm()
+
+    if form == 3 then -- Cat Form
+        return GetFeralCatRecommendations(addon)
+    elseif form == 1 then -- Bear Form
+        if addon.db.feral_cat and addon.db.feral_cat.bearweave then
+            return GetFeralCatRecommendations(addon)
+        else
+            return GetFeralBearRecommendations(addon)
+        end
+    elseif form == 5 then -- Moonkin Form
+        return GetBalanceRecommendations(addon)
+    else
+        -- Caster form - suggest shifting based on spec
+        local spec = addon:GetActiveSpec()
+        if spec == "balance" then
+            local ability = class.abilities.moonkin_form
+            return { { ability = "moonkin_form", texture = ability and ability.texture or select(3, GetSpellInfo(24858)) } }
+        else
+            local ability = class.abilities.cat_form
+            return { { ability = "cat_form", texture = ability and ability.texture or select(3, GetSpellInfo(768)) } }
+        end
+    end
+end
+
+-- Register rotations - use a single "druid" rotation that dispatches internally
+-- The spec detector returns "feral", "balance", or "resto", but the rotation
+-- handles all specs since form determines the actual rotation used
+DH:RegisterRotation("feral", GetDruidRecommendations)
+DH:RegisterRotation("balance", GetDruidRecommendations)
+DH:RegisterRotation("resto", GetDruidRecommendations)
