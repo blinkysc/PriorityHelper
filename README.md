@@ -40,4 +40,4 @@ Click the **minimap button** to select your rotation mode. The addon shows the n
 
 ## License
 
-MIT
+GPL-3.0
