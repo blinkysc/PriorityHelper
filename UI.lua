@@ -1,7 +1,7 @@
 -- UI.lua
--- Visual display for DruidHelper (3.3.5a compatible, no dependencies)
+-- Visual display for PriorityHelper (3.3.5a compatible, no dependencies)
 
-local DH = DruidHelper
+local DH = PriorityHelper
 if not DH then return end
 
 local ns = DH.ns
@@ -9,7 +9,7 @@ local class = DH.Class
 
 -- Create main display frame
 local function CreateMainFrame()
-    local frame = CreateFrame("Frame", "DruidHelperFrame", UIParent)
+    local frame = CreateFrame("Frame", "PriorityHelperFrame", UIParent)
     frame:SetSize(220, 60)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, -200)
     frame:SetMovable(true)
@@ -44,7 +44,7 @@ end
 -- Create ability button
 local function CreateAbilityButton(parent, index)
     local size = DH.db and DH.db.display.iconSize or 50
-    local button = CreateFrame("Button", "DruidHelperButton" .. index, parent)
+    local button = CreateFrame("Button", "PriorityHelperButton" .. index, parent)
     button:SetSize(size, size)
 
     -- Position buttons horizontally
@@ -60,7 +60,7 @@ local function CreateAbilityButton(parent, index)
     button.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
     -- Cooldown sweep animation (like normal action bars)
-    button.cooldown = CreateFrame("Cooldown", "DruidHelperCooldown" .. index, button, "CooldownFrameTemplate")
+    button.cooldown = CreateFrame("Cooldown", "PriorityHelperCooldown" .. index, button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints()
 
     -- Cooldown text overlay (for longer CDs, optional)
@@ -215,7 +215,7 @@ end
 local function CreateDebugFrame()
     if ns.DebugFrame then return ns.DebugFrame end
 
-    local frame = CreateFrame("Frame", "DruidHelperDebugFrame", UIParent)
+    local frame = CreateFrame("Frame", "PriorityHelperDebugFrame", UIParent)
     frame:SetSize(260, 130)
     frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 10, -200)
 

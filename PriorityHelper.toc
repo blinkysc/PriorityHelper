@@ -1,0 +1,13 @@
+## Interface: 30300
+## Version: 1.0.0
+## Title: PriorityHelper
+## Author: Custom
+## Notes: Priority rotation helper for WotLK 3.3.5a
+## SavedVariables: PriorityHelperDB
+
+PriorityHelper.lua
+State.lua
+UI.lua
+Classes\Druid\Druid.lua
+Classes\Druid\Core.lua
+Config.lua

@@ -1,7 +1,7 @@
 -- Classes/Druid/Core.lua
 -- Priority rotation logic for Druid specs (3.3.5a compatible)
 
-local DH = DruidHelper
+local DH = PriorityHelper
 if not DH then return end
 
 -- Only load for Druids

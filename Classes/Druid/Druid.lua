@@ -1,7 +1,7 @@
 -- Classes/Druid/Druid.lua
 -- Druid class module: ability definitions + registration of all Druid-specific data
 
-local DH = DruidHelper
+local DH = PriorityHelper
 if not DH then return end
 
 -- Only load for Druids

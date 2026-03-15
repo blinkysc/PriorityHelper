@@ -1,14 +1,14 @@
 -- Config.lua
--- Minimap button with rotation mode dropdown for DruidHelper (3.3.5a, no dependencies)
+-- Minimap button with rotation mode dropdown for PriorityHelper (3.3.5a, no dependencies)
 
-local DH = DruidHelper
+local DH = PriorityHelper
 if not DH then return end
 
 local ns = DH.ns
 
 -- ============================================================================
 -- ROTATION MODE SYSTEM
--- Class modules register available modes via DH:RegisterMode() (defined in DruidHelper.lua)
+-- Class modules register available modes via DH:RegisterMode() (defined in PriorityHelper.lua)
 -- ============================================================================
 
 -- Get the active mode data
@@ -27,7 +27,7 @@ end
 -- DROPDOWN MENU
 -- ============================================================================
 
-local dropdownFrame = CreateFrame("Frame", "DruidHelperDropdown", UIParent, "UIDropDownMenuTemplate")
+local dropdownFrame = CreateFrame("Frame", "PriorityHelperDropdown", UIParent, "UIDropDownMenuTemplate")
 
 local function BuildDropdown(self, level)
     level = level or 1
@@ -37,7 +37,7 @@ local function BuildDropdown(self, level)
     local currentMode = DH.db and DH.db.mode or nil
 
     -- Title
-    info.text = "DruidHelper"
+    info.text = "PriorityHelper"
     info.isTitle = true
     info.notCheckable = true
     UIDropDownMenu_AddButton(info, level)
@@ -80,7 +80,7 @@ local function BuildDropdown(self, level)
     info.notCheckable = true
     info.func = function()
         DH.db.enabled = not DH.db.enabled
-        DH:Print("DruidHelper " .. (DH.db.enabled and "enabled" or "disabled"))
+        DH:Print("PriorityHelper " .. (DH.db.enabled and "enabled" or "disabled"))
         if not DH.db.enabled then DH:HideUI() end
     end
     UIDropDownMenu_AddButton(info, level)
@@ -104,7 +104,7 @@ end
 -- ============================================================================
 
 local function CreateMinimapButton()
-    local button = CreateFrame("Button", "DruidHelperMinimapButton", Minimap)
+    local button = CreateFrame("Button", "PriorityHelperMinimapButton", Minimap)
     button:SetSize(31, 31)
     button:SetFrameStrata("MEDIUM")
     button:SetFrameLevel(8)
@@ -177,7 +177,7 @@ local function CreateMinimapButton()
     -- Tooltip
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("DruidHelper v" .. DH.Version)
+        GameTooltip:AddLine("PriorityHelper v" .. DH.Version)
         local activeMode = DH:GetActiveMode()
         if activeMode then
             GameTooltip:AddLine("Mode: |cFF00FF00" .. activeMode.name .. "|r", 1, 1, 1)

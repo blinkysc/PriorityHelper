@@ -1,8 +1,8 @@
 -- State.lua
--- Generic game state tracking for DruidHelper (3.3.5a compatible)
+-- Generic game state tracking for PriorityHelper (3.3.5a compatible)
 -- Class modules register buffs, debuffs, cooldowns, talents, glyphs via the registration API.
 
-local DH = DruidHelper
+local DH = PriorityHelper
 if not DH then return end
 
 local ns = DH.ns

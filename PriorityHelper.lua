@@ -1,10 +1,10 @@
--- DruidHelper.lua
+-- PriorityHelper.lua
 -- Rotation helper framework for WotLK 3.3.5a
 -- Class modules register their data via the registration API
 
 -- Create addon namespace
-DruidHelper = {}
-local DH = DruidHelper
+PriorityHelper = {}
+local DH = PriorityHelper
 
 DH.Version = "1.0.0"
 
@@ -255,13 +255,13 @@ end
 -- Debug print
 function DH:Debug(msg, ...)
     if self.db and self.db.debug then
-        print("|cFF00FF00DruidHelper:|r " .. string.format(msg, ...))
+        print("|cFF00FF00PriorityHelper:|r " .. string.format(msg, ...))
     end
 end
 
 -- Print message
 function DH:Print(msg)
-    print("|cFF00FF00DruidHelper:|r " .. msg)
+    print("|cFF00FF00PriorityHelper:|r " .. msg)
 end
 
 -- ============================================================================
@@ -269,7 +269,7 @@ end
 -- ============================================================================
 
 -- Main event frame
-local eventFrame = CreateFrame("Frame", "DruidHelperEventFrame", UIParent)
+local eventFrame = CreateFrame("Frame", "PriorityHelperEventFrame", UIParent)
 eventFrame:Hide()
 
 -- Update timer (200 updates/sec = 5ms)
@@ -288,7 +288,7 @@ end)
 local function OnEvent(self, event, ...)
     if event == "ADDON_LOADED" then
         local name = ...
-        if name == "DruidHelper" then
+        if name == "PriorityHelper" then
             DH:OnInitialize()
         end
     elseif event == "PLAYER_LOGIN" then
@@ -335,19 +335,19 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 -- Initialize addon
 function DH:OnInitialize()
     -- Load saved variables with merged defaults
-    DruidHelperDB = DruidHelperDB or {}
+    PriorityHelperDB = PriorityHelperDB or {}
     local defaults = BuildDefaults()
-    self.db = MergeDefaults(DruidHelperDB, defaults)
-    DruidHelperDB = self.db
+    self.db = MergeDefaults(PriorityHelperDB, defaults)
+    PriorityHelperDB = self.db
 
     -- Register slash commands
-    SLASH_DRUIDHELPER1 = "/dh"
-    SLASH_DRUIDHELPER2 = "/druidhelper"
-    SlashCmdList["DRUIDHELPER"] = function(msg)
+    SLASH_PRIORITYHELPER1 = "/ph"
+    SLASH_PRIORITYHELPER2 = "/priorityhelper"
+    SlashCmdList["PRIORITYHELPER"] = function(msg)
         DH:SlashCommand(msg)
     end
 
-    self:Print("v" .. self.Version .. " loaded. Type /dh for options.")
+    self:Print("v" .. self.Version .. " loaded. Type /ph for options.")
 end
 
 -- Enable addon
@@ -407,7 +407,7 @@ function DH:SlashCommand(input)
         self:Print("Display position reset")
     elseif cmd == "toggle" then
         self.db.enabled = not self.db.enabled
-        self:Print("DruidHelper " .. (self.db.enabled and "enabled" or "disabled"))
+        self:Print("PriorityHelper " .. (self.db.enabled and "enabled" or "disabled"))
         if self.db.enabled then
             eventFrame:Show()
         else
@@ -466,7 +466,7 @@ function DH:SlashCommand(input)
         end
     elseif cmd == "scale" then
         self:Print("Current scale: " .. self.db.display.scale)
-        self:Print("Use /dh scale <0.5-2.0> to change")
+        self:Print("Use /ph scale <0.5-2.0> to change")
     elseif string.match(cmd, "^scale ") then
         local val = tonumber(string.match(cmd, "^scale (.+)"))
         if val and val >= 0.5 and val <= 2.0 then
@@ -499,19 +499,19 @@ function DH:SlashCommand(input)
 
         if not handled then
             self:Print("Commands:")
-            self:Print("  /dh toggle - Enable/disable addon")
-            self:Print("  /dh show - Force show UI")
-            self:Print("  /dh status - Show debug status")
-            self:Print("  /dh lock - Lock/unlock display position")
-            self:Print("  /dh reset - Reset display position")
-            self:Print("  /dh scale <0.5-2.0> - Set display scale")
-            self:Print("  /dh icons <1-4> - Set icon count")
-            self:Print("  /dh debug - Toggle debug mode")
-            self:Print("  /dh live - Toggle live debug frame")
+            self:Print("  /ph toggle - Enable/disable addon")
+            self:Print("  /ph show - Force show UI")
+            self:Print("  /ph status - Show debug status")
+            self:Print("  /ph lock - Lock/unlock display position")
+            self:Print("  /ph reset - Reset display position")
+            self:Print("  /ph scale <0.5-2.0> - Set display scale")
+            self:Print("  /ph icons <1-4> - Set icon count")
+            self:Print("  /ph debug - Toggle debug mode")
+            self:Print("  /ph live - Toggle live debug frame")
             -- Show class-registered commands
             for pattern, data in pairs(ns.slashCommands) do
                 if data.help then
-                    self:Print("  /dh " .. data.help)
+                    self:Print("  /ph " .. data.help)
                 end
             end
         end
