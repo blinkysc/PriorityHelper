@@ -2,6 +2,15 @@
 
 All notable changes to PriorityHelper will be documented in this file.
 
+## [1.1.7] - 2026-03-15
+
+### Fixed
+- Revert Paladin to queue-based priority system (sim approach caused duplicates
+  and incorrect ordering)
+- Fix duplicate abilities appearing in Prot recommendations (SoR/HotR removed
+  from queue, only handled by interleave logic)
+- Duplicate prevention at every insertion point
+
 ## [1.1.6] - 2026-03-15
 
 ### Added
