@@ -23,6 +23,7 @@ local state = DH.State
 
 -- Simulated state for prediction (copy of real state values)
 local sim = {}
+local modeBearweave = false  -- Set by rotation mode before calling recommendations
 local SIM_GCD = 1.0  -- Feral GCD (1.0 sec with talents)
 local ENERGY_REGEN = 10  -- Energy per second
 local FUROR_ENERGY = 40  -- Energy from 5/5 Furor when shifting to cat
@@ -177,12 +178,12 @@ local function GetNextBearAbility()
         return "cat_form"
     end
 
-    -- Priority 6: Low rage - exit to cat
+    -- Priority 7: Low rage - exit to cat
     if sim.rage < 13 then
         return "cat_form"
     end
 
-    -- Priority 7: Still have rage, keep stacking/refreshing Lacerate
+    -- Priority 8: Still have rage, keep stacking/refreshing Lacerate
     return "lacerate"
 end
 
@@ -277,8 +278,7 @@ local function GetNextCatAbility()
     end
 
     -- Priority 10: Bearweave if conditions met
-    local bearweave_enabled = DH.db and DH.db.feral_cat and DH.db.feral_cat.bearweave
-    if bearweave_enabled and ShouldBearweave() then
+    if modeBearweave and ShouldBearweave() then
         return "dire_bear_form"
     end
 
@@ -605,38 +605,32 @@ local function GetFeralBearRecommendations(addon)
         if #recommendations >= 4 then return recommendations end
     end
 
-    -- 3. Maul if excess rage
-    if rage > 60 then
-        addRec("maul")
-        if #recommendations >= 4 then return recommendations end
-    end
-
-    -- 4. Emergency Lacerate
+    -- 3. Emergency Lacerate
     if lacerate_up and lacerate_remains < 4.5 then
         addRec("lacerate")
         if #recommendations >= 4 then return recommendations end
     end
 
-    -- 5. Mangle
+    -- 4. Mangle
     if s.talent.mangle.rank > 0 and mangle_ready then
         addRec("mangle_bear")
         if #recommendations >= 4 then return recommendations end
     end
 
-    -- 6. Faerie Fire for debuff
+    -- 5. Faerie Fire for debuff
     if s.cooldown.faerie_fire_feral.ready and not s.debuff.faerie_fire_feral.up then
         addRec("faerie_fire_feral")
         if #recommendations >= 4 then return recommendations end
     end
 
-    -- 7. Build Lacerate stacks
+    -- 6. Build Lacerate stacks
     if not lacerate_up or lacerate_stack < 5 or lacerate_remains < 8 then
         addRec("lacerate")
         if #recommendations >= 4 then return recommendations end
     end
 
-    -- 8. Swipe if excess rage
-    if rage > 60 then
+    -- 7. Swipe as rage dump / filler
+    if rage > 30 then
         addRec("swipe_bear")
         if #recommendations >= 4 then return recommendations end
     end
@@ -653,6 +647,25 @@ end
 -- BALANCE (MOONKIN) ROTATION
 -- ============================================================================
 
+-- Balance rotation based on WotLK sim APL (wowsim/wotlk)
+--
+-- Eclipse ICD system:
+--   Lunar Eclipse (48518) - proc'd by Wrath crit, buffs Starfire crit +40
+--   Solar Eclipse (48517) - proc'd by Starfire crit, buffs Wrath damage +40%
+--   30 second ICD between eclipse procs
+--
+-- Core fishing logic:
+--   When NO eclipse is active:
+--     - If Lunar ICD is ready → cast Wrath to fish for Lunar proc
+--     - If Lunar ICD is NOT ready → cast Starfire to fish for Solar proc
+--   When eclipse IS active:
+--     - Lunar Eclipse → spam Starfire (it's buffed)
+--     - Solar Eclipse → spam Wrath (it's buffed)
+--
+-- DoT management:
+--   - Moonfire: maintain when not active (instant, always worth it)
+--   - Insect Swarm: only refresh during Lunar ICD downtime (don't waste GCDs while fishing)
+--
 local function GetBalanceRecommendations(addon)
     local recommendations = {}
     local s = state
@@ -670,121 +683,148 @@ local function GetBalanceRecommendations(addon)
                 name = ability.name,
             })
         end
+        return #recommendations >= 3
     end
 
-    local lunar_up = s.buff.eclipse_lunar.up
-    local solar_up = s.buff.eclipse_solar.up
-    local elunes_wrath_up = s.buff.elunes_wrath.up
-
+    -- Eclipse state
+    local lunar_up = s.buff.eclipse_lunar.up        -- Wrath crit'd → Starfire buffed
+    local solar_up = s.buff.eclipse_solar.up         -- Starfire crit'd → Wrath buffed
     local now = s.now
-    local lunar_can_proc = s.buff.eclipse_lunar.last_applied == 0 or (now - s.buff.eclipse_lunar.last_applied) >= 30
-    local solar_can_proc = s.buff.eclipse_solar.last_applied == 0 or (now - s.buff.eclipse_solar.last_applied) >= 30
 
-    local spam_now = lunar_up or solar_up
-    local fish_now = not spam_now
-    local lunar_fish = fish_now and lunar_can_proc
-    local solar_fish = fish_now and (solar_can_proc or not lunar_can_proc)
+    -- ICD tracking: can we proc Lunar Eclipse? (30s ICD from last proc)
+    local lunar_icd_ready = s.buff.eclipse_lunar.last_applied == 0
+        or (now - s.buff.eclipse_lunar.last_applied) >= 30
 
-    -- Instant Starfire from Elune's Wrath
-    if elunes_wrath_up then
-        addRec("starfire")
-        if #recommendations >= 4 then return recommendations end
+    -- 1. Force of Nature off CD (if > 20s remaining)
+    if s.talent.force_of_nature.rank > 0 and s.cooldown.force_of_nature.ready and s.target.time_to_die > 20 then
+        if addRec("force_of_nature") then return recommendations end
     end
 
-    -- Force of Nature
-    if s.talent.force_of_nature.rank > 0 and s.cooldown.force_of_nature.ready then
-        addRec("force_of_nature")
-        if #recommendations >= 4 then return recommendations end
-    end
-
-    -- Starfall
+    -- 2. Starfall off CD
     if s.talent.starfall.rank > 0 and s.cooldown.starfall.ready then
-        addRec("starfall")
-        if #recommendations >= 4 then return recommendations end
+        if addRec("starfall") then return recommendations end
     end
 
-    -- Faerie Fire (improved)
+    -- 3. Faerie Fire if Improved FF talented and not on target
     if s.talent.improved_faerie_fire.rank > 0 and not s.debuff.faerie_fire.up then
-        addRec("faerie_fire")
-        if #recommendations >= 4 then return recommendations end
+        if addRec("faerie_fire") then return recommendations end
     end
 
-    -- Insect Swarm
-    if s.talent.insect_swarm.rank > 0 and not s.debuff.insect_swarm.up then
-        addRec("insect_swarm")
-        if #recommendations >= 4 then return recommendations end
+    -- 4. Moonfire if not active on target
+    if not s.debuff.moonfire.up then
+        if addRec("moonfire") then return recommendations end
     end
 
-    -- SPAM PHASE
-    if spam_now then
-        if solar_up then
-            addRec("wrath")
-            if #recommendations >= 4 then return recommendations end
-        end
-        if lunar_up then
-            addRec("starfire")
-            if #recommendations >= 4 then return recommendations end
-        end
+    -- 5. ECLIPSE ACTIVE: spam the buffed spell
+    if lunar_up then
+        -- Lunar Eclipse active → Starfire is buffed (crit bonus)
+        if addRec("starfire") then return recommendations end
     end
 
-    -- FISHING PHASE
-    if fish_now then
-        if lunar_fish and not s.debuff.moonfire.up then
-            addRec("moonfire")
-            if #recommendations >= 4 then return recommendations end
-        end
-        if lunar_fish then
-            addRec("wrath")
-            if #recommendations >= 4 then return recommendations end
-        end
-        if solar_fish then
-            addRec("starfire")
-            if #recommendations >= 4 then return recommendations end
-        end
+    if solar_up then
+        -- Solar Eclipse active → Wrath is buffed (damage bonus)
+        if addRec("wrath") then return recommendations end
     end
 
-    -- Default
-    if #recommendations < 4 then
-        addRec("starfire")
+    -- 6. NO ECLIPSE: fishing phase + DoT maintenance
+
+    -- Insect Swarm: only refresh when Lunar ICD is NOT ready AND Lunar Eclipse
+    -- isn't about to expire (don't waste GCDs during buffed Starfire window)
+    local lunar_ending_soon = lunar_up and s.buff.eclipse_lunar.remains < 5
+    if s.talent.insect_swarm.rank > 0 and not s.debuff.insect_swarm.up
+        and not lunar_icd_ready and not lunar_ending_soon then
+        if addRec("insect_swarm") then return recommendations end
+    end
+
+    -- Fishing logic from sim APL:
+    if not lunar_icd_ready then
+        -- Lunar ICD not ready → cast Starfire to fish for Solar Eclipse
+        if addRec("starfire") then return recommendations end
+    else
+        -- Lunar ICD ready → cast Wrath to fish for Lunar Eclipse
+        if addRec("wrath") then return recommendations end
+    end
+
+    -- Fallback (shouldn't reach here, but just in case)
+    if #recommendations < 3 then
+        addRec("wrath")
     end
 
     return recommendations
 end
 
 -- ============================================================================
--- ROTATION DISPATCH
--- Determines which rotation to use based on form and spec
+-- ROTATION MODES
+-- Each mode is a self-contained rotation that handles form-awareness
 -- ============================================================================
 
-local function GetDruidRecommendations(addon)
+-- Cat (DPS): Pure cat rotation, shift to cat if not in cat form
+local function CatModeRotation(addon)
+    modeBearweave = false
     local form = GetShapeshiftForm()
-
-    if form == 3 then -- Cat Form
+    if form == 3 then
         return GetFeralCatRecommendations(addon)
-    elseif form == 1 then -- Bear Form
-        if addon.db.feral_cat and addon.db.feral_cat.bearweave then
-            return GetFeralCatRecommendations(addon)
-        else
-            return GetFeralBearRecommendations(addon)
-        end
-    elseif form == 5 then -- Moonkin Form
-        return GetBalanceRecommendations(addon)
     else
-        -- Caster form - suggest shifting based on spec
-        local spec = addon:GetActiveSpec()
-        if spec == "balance" then
-            local ability = class.abilities.moonkin_form
-            return { { ability = "moonkin_form", texture = ability and ability.texture or select(3, GetSpellInfo(24858)) } }
-        else
-            local ability = class.abilities.cat_form
-            return { { ability = "cat_form", texture = ability and ability.texture or select(3, GetSpellInfo(768)) } }
-        end
+        local ability = class.abilities.cat_form
+        return { { ability = "cat_form", texture = ability and ability.texture or select(3, GetSpellInfo(768)) } }
     end
 end
 
--- Register rotations - use a single "druid" rotation that dispatches internally
--- The spec detector returns "feral", "balance", or "resto", but the rotation
--- handles all specs since form determines the actual rotation used
-DH:RegisterRotation("feral", GetDruidRecommendations)
-DH:RegisterRotation("balance", GetDruidRecommendations)
-DH:RegisterRotation("resto", GetDruidRecommendations)
+-- Cat + Bearweave (DPS): Cat rotation with bearweaving, handles bear form
+local function CatBearweaveModeRotation(addon)
+    modeBearweave = true
+    local form = GetShapeshiftForm()
+    if form == 3 or form == 1 then
+        return GetFeralCatRecommendations(addon)
+    else
+        local ability = class.abilities.cat_form
+        return { { ability = "cat_form", texture = ability and ability.texture or select(3, GetSpellInfo(768)) } }
+    end
+end
+
+-- Bear (Tank): Pure bear rotation, shift to bear if not in bear form
+local function BearModeRotation(addon)
+    local form = GetShapeshiftForm()
+    if form == 1 then
+        return GetFeralBearRecommendations(addon)
+    else
+        local ability = class.abilities.dire_bear_form
+        return { { ability = "dire_bear_form", texture = ability and ability.texture or select(3, GetSpellInfo(9634)) } }
+    end
+end
+
+-- Boomkin (DPS): Balance rotation, shift to moonkin if not in moonkin form
+local function BoomkinModeRotation(addon)
+    local form = GetShapeshiftForm()
+    if form == 5 then
+        return GetBalanceRecommendations(addon)
+    else
+        local ability = class.abilities.moonkin_form
+        return { { ability = "moonkin_form", texture = ability and ability.texture or select(3, GetSpellInfo(24858)) } }
+    end
+end
+
+-- Register the 4 rotation modes with icons for the dropdown
+DH:RegisterMode("feral_cat", {
+    name = "Cat (DPS)",
+    icon = select(3, GetSpellInfo(768)) or "Interface\\Icons\\Ability_Druid_CatForm",
+    rotation = CatModeRotation,
+})
+
+DH:RegisterMode("feral_cat_bearweave", {
+    name = "Cat + Bearweave (DPS)",
+    icon = select(3, GetSpellInfo(768)) or "Interface\\Icons\\Ability_Druid_CatForm",
+    rotation = CatBearweaveModeRotation,
+})
+
+DH:RegisterMode("feral_bear", {
+    name = "Bear (Tank)",
+    icon = select(3, GetSpellInfo(9634)) or "Interface\\Icons\\Ability_Racial_BearForm",
+    rotation = BearModeRotation,
+})
+
+DH:RegisterMode("balance", {
+    name = "Boomkin (DPS)",
+    icon = select(3, GetSpellInfo(24858)) or "Interface\\Icons\\Spell_Nature_ForceOfNature",
+    rotation = BoomkinModeRotation,
+})

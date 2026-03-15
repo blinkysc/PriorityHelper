@@ -10,3 +10,4 @@ State.lua
 UI.lua
 Classes\Druid\Druid.lua
 Classes\Druid\Core.lua
+Config.lua

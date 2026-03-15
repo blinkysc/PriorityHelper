@@ -775,3 +775,4 @@ ns.registered.debugFrameUpdater = function()
     ns.DebugFrame.text:SetText(table.concat(lines, "\n"))
     ns.DebugFrame:Show()
 end
+

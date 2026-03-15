@@ -72,6 +72,7 @@ ns.registered = {
     formHandlers = {},    -- { formId = { update = fn, spec = fn }, ... }
     specDetector = nil,   -- Function that returns current spec string
     rotations = {},       -- { specKey = fn(addon), ... } returns recommendations
+    modes = {},           -- Rotation modes for minimap dropdown
     gcdSpellId = nil,     -- Spell ID used to check GCD
     defaults = {},        -- Class-specific default settings
 }
@@ -159,6 +160,14 @@ end
 -- Register rotation function for a spec key
 function DH:RegisterRotation(specKey, fn)
     ns.registered.rotations[specKey] = fn
+end
+
+-- Register a rotation mode for the minimap dropdown
+-- key: unique string, data: { name, icon, rotation = fn(addon) }
+function DH:RegisterMode(key, data)
+    ns.registered.modes = ns.registered.modes or {}
+    data.key = key
+    table.insert(ns.registered.modes, data)
 end
 
 -- Register GCD reference spell
