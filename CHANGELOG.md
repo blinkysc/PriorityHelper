@@ -2,6 +2,15 @@
 
 All notable changes to PriorityHelper will be documented in this file.
 
+## [2.0.0] - 2026-03-22
+
+### Added
+- **Priest support**: Shadow (DPS) rotation mode — all 10 WotLK classes now supported!
+- Shadow: Shadowform check, VT/DP/SWP DoT maintenance, Mind Blast on CD (Improved MB talent reduces CD), SW:D execute, Mind Flay filler, Shadowfiend/Dispersion mana recovery
+- **Mind Flay clip glow system**: green glow on REC1 icon during MF channel at optimal tick-clip windows, signals when to interrupt MF for a higher priority ability
+- Generic glow overlay system in UI.lua (usable by any class via ns.glowButtons)
+- Class-specific glow updater hook (ns.registered.glowUpdater) called every update cycle
+
 ## [1.9.0] - 2026-03-22
 
 ### Added

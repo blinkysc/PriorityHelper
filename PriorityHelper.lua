@@ -6,7 +6,7 @@
 PriorityHelper = {}
 local DH = PriorityHelper
 
-DH.Version = "1.9.0"
+DH.Version = "2.0.0"
 
 -- Namespace for internal data
 local ns = {}
@@ -693,6 +693,10 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     if updateElapsed >= UPDATE_INTERVAL then
         updateElapsed = 0
         DH:UpdateRecommendations()
+        -- Run class-specific glow updater if registered
+        if ns.registered.glowUpdater then
+            ns.registered.glowUpdater()
+        end
     end
 end)
 

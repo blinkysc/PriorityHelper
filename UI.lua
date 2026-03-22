@@ -75,10 +75,20 @@ local function CreateAbilityButton(parent, index)
     button.rangeOverlay:SetTexture(1, 0, 0, 0.3)
     button.rangeOverlay:Hide()
 
+    -- Glow border (for clip/proc indicators — hidden by default)
+    button.glow = button:CreateTexture(nil, "OVERLAY")
+    button.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    button.glow:SetBlendMode("ADD")
+    button.glow:SetPoint("CENTER")
+    button.glow:SetSize(size * 1.6, size * 1.6)
+    button.glow:SetVertexColor(0.3, 1.0, 0.3, 0.8)  -- green glow
+    button.glow:Hide()
+
     -- Mark first button as primary (slightly larger)
     if index == 1 then
         button.isPrimary = true
         button:SetSize(size + 10, size + 10)
+        button.glow:SetSize((size + 10) * 1.6, (size + 10) * 1.6)
     end
 
     button:Hide()
@@ -190,6 +200,18 @@ function ns.UpdateUI(addon)
             button:Show()
         else
             button:Hide()
+        end
+    end
+
+    -- Update glow overlay (class modules set ns.glowButtons = { [index] = true })
+    for i = 1, addon.db.display.numIcons do
+        local button = buttons[i]
+        if button and button.glow then
+            if ns.glowButtons and ns.glowButtons[i] then
+                button.glow:Show()
+            else
+                button.glow:Hide()
+            end
         end
     end
 
