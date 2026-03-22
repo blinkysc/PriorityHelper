@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Version: 1.2.0
+## Version: 1.3.0
 ## Title: PriorityHelper
 ## Author: Custom
 ## Notes: Priority rotation helper for WotLK 3.3.5a
@@ -12,4 +12,6 @@ Classes\Druid\Druid.lua
 Classes\Druid\Core.lua
 Classes\Paladin\Paladin.lua
 Classes\Paladin\Core.lua
+Classes\Warlock\Warlock.lua
+Classes\Warlock\Core.lua
 Config.lua

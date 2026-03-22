@@ -6,7 +6,7 @@
 PriorityHelper = {}
 local DH = PriorityHelper
 
-DH.Version = "1.1.7"
+DH.Version = "1.3.0"
 
 -- Namespace for internal data
 local ns = {}
@@ -374,9 +374,11 @@ function DH:RunSimulation(s, config)
         config.initState(sim, s)
     end
 
-    -- Account for current GCD
-    if sim.gcd_remains > 0 then
-        AdvanceSimTime(self, sim, config, sim.gcd_remains)
+    -- Account for current GCD or in-progress cast (whichever is longer)
+    local castRemains = s.cast_remains or 0
+    local waitRemains = math.max(sim.gcd_remains, castRemains)
+    if waitRemains > 0 then
+        AdvanceSimTime(self, sim, config, waitRemains)
         sim.gcd_remains = 0
     end
 

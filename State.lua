@@ -237,6 +237,20 @@ function state:Reset()
         self._gcd_start = gcdStart
     end
 
+    -- Track current cast (spells with cast time longer than GCD)
+    self.cast_remains = 0
+    local spell, _, _, _, startTime, endTime = UnitCastingInfo("player")
+    if spell and endTime then
+        self.cast_remains = math.max(0, endTime / 1000 - self.now)
+    end
+    -- Also check channels (e.g. Drain Soul)
+    if self.cast_remains == 0 then
+        spell, _, _, _, startTime, endTime = UnitChannelInfo("player")
+        if spell and endTime then
+            self.cast_remains = math.max(0, endTime / 1000 - self.now)
+        end
+    end
+
     -- Update resources
     self:UpdateResources()
 
