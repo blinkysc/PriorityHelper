@@ -2,6 +2,21 @@
 
 All notable changes to PriorityHelper will be documented in this file.
 
+## [1.9.0] - 2026-03-22
+
+### Added
+- **Mage support**: Arcane, Fire, Frost rotation modes
+- Arcane: AB stack building to 4, AM dump at max stacks, Missile Barrage proc at 3+, Icy Veins/Arcane Power/Mirror Image/POM cooldown stacking, Evocation mana recovery
+- Fire: Hot Streak instant Pyroblast, Living Bomb (only recast after expiry for explosion), Improved Scorch maintenance, Combustion (buff-aware), Brain Freeze instant Fireball, Fireball filler
+- Frost: Fingers of Frost Ice Lance (stack consumption), Deep Freeze with FoF, Icy Veins, Frostbolt filler
+- Arcane Blast stack tracking via combat log (not exposed via UnitBuff in 3.3.5a)
+- Corrected buff IDs for AzerothCore: Hot Streak (48108), Combustion (28682)
+
+### Known Issues
+- Arcane Blast stack tracking via combat log may be unreliable in some edge cases
+- Brain Freeze proc not detectable via UnitBuff on AzerothCore — Frost rotation cannot react to this proc
+- Mage rotations need further tuning and testing
+
 ## [1.8.0] - 2026-03-22
 
 ### Added

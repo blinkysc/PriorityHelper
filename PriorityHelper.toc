@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Version: 1.8.0
+## Version: 1.9.0
 ## Title: PriorityHelper
 ## Author: Custom
 ## Notes: Priority rotation helper for WotLK 3.3.5a
@@ -24,4 +24,6 @@ Classes\DeathKnight\DeathKnight.lua
 Classes\DeathKnight\Core.lua
 Classes\Rogue\Rogue.lua
 Classes\Rogue\Core.lua
+Classes\Mage\Mage.lua
+Classes\Mage\Core.lua
 Config.lua

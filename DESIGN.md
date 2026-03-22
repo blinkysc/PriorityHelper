@@ -341,3 +341,4 @@ Rotations are based on:
 - **1.6.0** — Hunter added (Beast Mastery, Marksmanship, Survival), Lock and Load proc handling, shared Explosive/Arcane CD
 - **1.7.0** — Death Knight added (Blood, Frost, Unholy), rune system with real CD tracking, haste-adjusted recovery, Glyph of Disease, presence awareness
 - **1.8.0** — Rogue added (Assassination, Combat, Subtlety), energy/CP sim, Cut to the Chase, Shadow Dance Ambush
+- **1.9.0** — Mage added (Arcane, Fire, Frost), AB stack tracking via combat log, proc-reactive rotations (WIP — needs tuning)
