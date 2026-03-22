@@ -6,7 +6,7 @@
 PriorityHelper = {}
 local DH = PriorityHelper
 
-DH.Version = "1.1.6"
+DH.Version = "1.1.7"
 
 -- Namespace for internal data
 local ns = {}
@@ -254,10 +254,7 @@ function DH:SimWaitTime(simState, cdList)
             shortest = cd
         end
     end
-    if shortest >= 999 then return shortest end
-    -- Wait at least one GCD so abilities within one GCD of each other
-    -- both get a chance to be ready (priority decides which to use)
-    return math.max(shortest, simState.gcd or 1.5)
+    return shortest
 end
 
 -- ---- Target ----

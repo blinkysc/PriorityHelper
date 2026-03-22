@@ -174,25 +174,32 @@ local protConfig = {
             return false
         end
 
-        -- 969 pattern: always pick a 6s ability first, then a 9s, alternating.
-        -- Count how many 6s abilities are already recommended
-        local has6s = hasRec("shield_of_righteousness") or hasRec("hammer_of_the_righteous")
+        local sor_cd = sim:remains("shield_of_righteousness")
+        local hotr_cd = sim:remains("hammer_of_the_righteous")
 
-        -- If no 6s ability in recs yet, ALWAYS pick the nearest 6s (even if on CD)
-        if not has6s then
-            local sor = sim:remains("shield_of_righteousness")
-            local hotr = sim:remains("hammer_of_the_righteous")
-            if sor <= hotr then
+        -- 969 APL: cast a 6s ability only when the OTHER 6s is within 3s.
+        -- This naturally produces 6-9-6-9 without forcing it.
+        if sor_cd <= 0 and hotr_cd <= 3 then
+            return "shield_of_righteousness"
+        end
+        if hotr_cd <= 0 and sor_cd <= 3 then
+            return "hammer_of_the_righteous"
+        end
+
+        -- Execute: Hammer of Wrath
+        if sim.in_execute and sim:ready("hammer_of_wrath") then
+            return "hammer_of_wrath"
+        end
+
+        -- If both 6s on CD but one is very close (350ms), wait for it
+        -- rather than wasting a GCD on a 9s ability
+        local nearest6s = math.min(sor_cd, hotr_cd)
+        if nearest6s > 0 and nearest6s <= 0.35 then
+            if sor_cd <= hotr_cd then
                 return "shield_of_righteousness"
             else
                 return "hammer_of_the_righteous"
             end
-        end
-
-        -- We have a 6s in recs. Now pick a 9s ability (must be ready).
-        -- Execute: Hammer of Wrath
-        if sim.in_execute and sim:ready("hammer_of_wrath") then
-            return "hammer_of_wrath"
         end
 
         -- Divine Plea (high priority when mana is critical)
@@ -200,6 +207,7 @@ local protConfig = {
             return "divine_plea"
         end
 
+        -- 9s abilities in priority order: Cons > HS > JoW
         if sim:ready("consecration") then
             return "consecration"
         end
@@ -212,27 +220,23 @@ local protConfig = {
             return "judgement_of_wisdom"
         end
 
-        -- No 9s ability ready — return the nearest 9s on CD.
-        -- The sim will wait for it, so it shows up in Rec3 approaching.
-        local nearest9s, nearest9sCD = nil, 999
-        local nines = { "consecration", "holy_shield", "judgement_of_wisdom" }
-        if sim.in_execute then table.insert(nines, 1, "hammer_of_wrath") end
-        for _, key in ipairs(nines) do
+        -- Nothing ready — return whichever ability comes off CD soonest
+        local nearest, nearestCD = nil, 999
+        local all = {
+            "shield_of_righteousness", "hammer_of_the_righteous",
+            "consecration", "holy_shield", "judgement_of_wisdom",
+        }
+        if sim.in_execute then table.insert(all, "hammer_of_wrath") end
+        for _, key in ipairs(all) do
             if not hasRec(key) then
                 local cd = sim:remains(key)
-                if cd < nearest9sCD then
-                    nearest9s = key
-                    nearest9sCD = cd
+                if cd < nearestCD then
+                    nearest = key
+                    nearestCD = cd
                 end
             end
         end
-        if nearest9s then return nearest9s end
-
-        -- Absolute fallback: pick whichever 6s isn't recommended yet
-        if not hasRec("shield_of_righteousness") then return "shield_of_righteousness" end
-        if not hasRec("hammer_of_the_righteous") then return "hammer_of_the_righteous" end
-
-        return nil
+        return nearest
     end,
     onCast = function(sim, key)
         if key == "righteous_fury" then
