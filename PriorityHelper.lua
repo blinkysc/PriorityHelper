@@ -398,52 +398,64 @@ function DH:RunSimulation(s, config)
         local action = config.getPriority(sim, recommendations)
 
         if not action then
-            break
+            -- Nothing to cast right now. If class provides getWaitTime,
+            -- advance time and loop back to try again (energy regen, etc.)
+            if config.getWaitTime then
+                local wait = config.getWaitTime(sim)
+                if wait and wait > 0 then
+                    AdvanceSimTime(self, sim, config, wait)
+                end
+            else
+                break
+            end
         end
 
-        -- If the ability is on CD, advance time until it's ready
-        local cdRemaining = sim.cd[action] or 0
-        if cdRemaining > 0 then
-            AdvanceSimTime(self, sim, config, cdRemaining)
-        end
+        -- If we got an action (either directly or after waiting), process it
+        if action then
+            -- If the ability is on CD, advance time until it's ready
+            local cdRemaining = sim.cd[action] or 0
+            if cdRemaining > 0 then
+                AdvanceSimTime(self, sim, config, cdRemaining)
+            end
 
-        -- Add to recommendations (check dupes unless allowDupes)
-        local dominated = false
-        if not allowDupes then
-            for _, rec in ipairs(recommendations) do
-                if rec.ability == action then
-                    dominated = true
-                    break
+            -- Add to recommendations (check dupes unless allowDupes)
+            local dominated = false
+            if not allowDupes then
+                for _, rec in ipairs(recommendations) do
+                    if rec.ability == action then
+                        dominated = true
+                        break
+                    end
                 end
             end
-        end
-        if not dominated then
-            local ability = self.Class.abilities[action]
-            if ability then
-                table.insert(recommendations, {
-                    ability = action,
-                    texture = ability.texture,
-                    name = ability.name,
-                })
+            if not dominated then
+                local ability = self.Class.abilities[action]
+                if ability then
+                    table.insert(recommendations, {
+                        ability = action,
+                        texture = ability.texture,
+                        name = ability.name,
+                    })
+                end
             end
-        end
 
-        -- Set the ability's CD in sim
-        if sim.cd[action] ~= nil and config.baseCDs and config.baseCDs[action] then
-            sim.cd[action] = config.baseCDs[action]
-        end
+            -- Set the ability's CD in sim
+            if sim.cd[action] ~= nil and config.baseCDs and config.baseCDs[action] then
+                sim.cd[action] = config.baseCDs[action]
+            end
 
-        -- Class-specific cast effects (resource spending, buff application, etc.)
-        if config.onCast then
-            config.onCast(sim, action)
-        end
+            -- Class-specific cast effects
+            if config.onCast then
+                config.onCast(sim, action)
+            end
 
-        -- Advance time by GCD or custom cast time
-        local advanceTime = sim.gcd
-        if config.getAdvanceTime then
-            advanceTime = config.getAdvanceTime(sim, action)
+            -- Advance time by GCD or custom cast time
+            local advanceTime = sim.gcd
+            if config.getAdvanceTime then
+                advanceTime = config.getAdvanceTime(sim, action)
+            end
+            AdvanceSimTime(self, sim, config, advanceTime)
         end
-        AdvanceSimTime(self, sim, config, advanceTime)
     end
 
     return recommendations

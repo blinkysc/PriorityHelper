@@ -157,8 +157,119 @@ function DH:SimWaitTime(simState, cdList)
     return shortest
 end
 
--- RunSimulation stub (Druid doesn't use it but it's in PriorityHelper.lua)
-function DH:RunSimulation() return {} end
+-- RunSimulation (full copy from PriorityHelper.lua)
+local function AdvanceSimTime(DH, sim, config, seconds)
+    if seconds <= 0 then return end
+    for k, v in pairs(sim.cd) do sim.cd[k] = math.max(0, v - seconds) end
+    if config.resources then
+        for _, res in ipairs(config.resources) do
+            if res.regen and res.regen > 0 then
+                local cur = sim[res.field] or 0
+                local cap = res.max and sim[res.max] or 999999
+                sim[res.field] = math.min(cap, cur + res.regen * seconds)
+            end
+        end
+    end
+    if config.auras then
+        for _, aura in ipairs(config.auras) do
+            local rem = sim[aura.remains]
+            if rem and rem > 0 then
+                rem = rem - seconds
+                if rem <= 0 then
+                    sim[aura.up] = false
+                    sim[aura.remains] = 0
+                    if aura.stacks and aura.clearStacks then sim[aura.stacks] = 0 end
+                else
+                    sim[aura.remains] = rem
+                end
+            end
+        end
+    end
+    DH:SimTickMana(sim, seconds)
+    if config.tickTime then config.tickTime(sim, seconds) end
+end
+
+function DH:RunSimulation(s, config)
+    local recommendations = {}
+    local maxRecs = config.maxRecs or 3
+    local allowDupes = config.allowDupes or false
+    if not s.target.exists or not s.target.canAttack then return recommendations end
+
+    local sim = {}
+    self:SimInitGCD(sim, s, config.gcdType or "melee")
+    self:SimInitMana(sim, s)
+    self:SimInitTarget(sim, s)
+
+    if config.resources then
+        for _, res in ipairs(config.resources) do
+            if res.initFrom then
+                sim[res.field] = res.initFrom(s)
+                if res.max and res.initMaxFrom then sim[res.max] = res.initMaxFrom(s) end
+            end
+        end
+    end
+
+    sim.cd = {}
+    if config.cds then
+        for simKey, stateKey in pairs(config.cds) do
+            local cd = s.cooldown[stateKey]
+            sim.cd[simKey] = cd and cd.remains or 0
+        end
+    end
+
+    if config.initState then config.initState(sim, s) end
+
+    if sim.gcd_remains > 0 then
+        AdvanceSimTime(self, sim, config, sim.gcd_remains)
+        sim.gcd_remains = 0
+    end
+
+    sim.ready = function(self, key) return (self.cd[key] or 0) <= 0 end
+    sim.remains = function(self, key) return self.cd[key] or 0 end
+
+    local iters = 0
+    while #recommendations < maxRecs and iters < 12 do
+        iters = iters + 1
+        local action = config.getPriority(sim, recommendations)
+        if not action then
+            if config.getWaitTime then
+                local wait = config.getWaitTime(sim)
+                if wait and wait > 0 then
+                    AdvanceSimTime(self, sim, config, wait)
+                end
+            else
+                break
+            end
+        end
+        if action then
+            local cdRemaining = sim.cd[action] or 0
+            if cdRemaining > 0 then AdvanceSimTime(self, sim, config, cdRemaining) end
+
+            local dominated = false
+            if not allowDupes then
+                for _, rec in ipairs(recommendations) do
+                    if rec.ability == action then dominated = true; break end
+                end
+            end
+            if not dominated then
+                local ability = self.Class.abilities[action]
+                if ability then
+                    table.insert(recommendations, { ability = action, texture = ability.texture, name = ability.name })
+                end
+            end
+
+            if sim.cd[action] ~= nil and config.baseCDs and config.baseCDs[action] then
+                sim.cd[action] = config.baseCDs[action]
+            end
+            if config.onCast then config.onCast(sim, action) end
+
+            local advanceTime = sim.gcd
+            if config.getAdvanceTime then advanceTime = config.getAdvanceTime(sim, action) end
+            AdvanceSimTime(self, sim, config, advanceTime)
+        end
+    end
+    return recommendations
+end
 
 -- ============================================================================
 -- STATE FACTORY
@@ -704,6 +815,250 @@ test("Balance: 5min combat, fresh start", function()
     if #violations.jumps > 0 then
         print("    " .. #violations.jumps .. " jumps detected")
     end
+end)
+
+-- ============================================================================
+-- REC FILL TESTS — must ALWAYS produce 3 recs (or 4 for bear)
+-- ============================================================================
+
+print("\n=== REC FILL TESTS ===\n")
+
+test("Cat: 0 energy, 0 CP — must still fill 3 recs", function()
+    _G._mockForm = 3
+    DH._snoozed.berserk = true
+    local frames, violations, count = simulateCombat("Cat empty", "feral_cat", {
+        form = 3, energy = 0, combo_points = 0,
+        duration = 30, frame_step = 0.005,
+    })
+    print("    " .. count .. " frames simulated")
+    local missingCount = 0
+    for _, f in ipairs(frames) do
+        local c = 0
+        for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+        if c < 3 then missingCount = missingCount + 1 end
+    end
+    print("    Frames with < 3 recs: " .. missingCount .. " / " .. count)
+    if missingCount > 0 then
+        -- Show first few
+        local shown = 0
+        for _, f in ipairs(frames) do
+            local c = 0
+            for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+            if c < 3 and shown < 5 then
+                shown = shown + 1
+                print(string.format("      t=%.2fs: [%s|%s|%s] (%d recs)",
+                    f.t, f.raw[1] or "-", f.raw[2] or "-", f.raw[3] or "-", c))
+            end
+        end
+        error(missingCount .. " frames with missing recs")
+    end
+end)
+
+test("Cat: 5 CP, low energy, SR about to expire — must fill 3 recs", function()
+    _G._mockForm = 3
+    DH._snoozed.berserk = true
+    local frames, violations, count = simulateCombat("Cat pressure", "feral_cat", {
+        form = 3, energy = 10, combo_points = 5,
+        sr_remains = 2, rip_remains = 4,
+        duration = 30, frame_step = 0.005,
+    })
+    print("    " .. count .. " frames simulated")
+    local missingCount = 0
+    for _, f in ipairs(frames) do
+        local c = 0
+        for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+        if c < 3 then missingCount = missingCount + 1 end
+    end
+    print("    Frames with < 3 recs: " .. missingCount .. " / " .. count)
+    if missingCount > 0 then
+        local shown = 0
+        for _, f in ipairs(frames) do
+            local c = 0
+            for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+            if c < 3 and shown < 5 then
+                shown = shown + 1
+                print(string.format("      t=%.2fs: [%s|%s|%s] (%d recs)",
+                    f.t, f.raw[1] or "-", f.raw[2] or "-", f.raw[3] or "-", c))
+            end
+        end
+        error(missingCount .. " frames with missing recs")
+    end
+end)
+
+test("Cat: mid Berserk, high energy — must fill 3 recs", function()
+    _G._mockForm = 3
+    local frames, violations, count = simulateCombat("Cat berserk", "feral_cat", {
+        form = 3, energy = 80, combo_points = 2,
+        sr_remains = 20, rip_remains = 15, rake_remains = 7,
+        duration = 30, frame_step = 0.005,
+    })
+    -- Manually set berserk buff
+    print("    " .. count .. " frames simulated")
+    local missingCount = 0
+    for _, f in ipairs(frames) do
+        local c = 0
+        for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+        if c < 3 then missingCount = missingCount + 1 end
+    end
+    print("    Frames with < 3 recs: " .. missingCount .. " / " .. count)
+    if missingCount > 0 then
+        local shown = 0
+        for _, f in ipairs(frames) do
+            local c = 0
+            for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+            if c < 3 and shown < 5 then
+                shown = shown + 1
+                print(string.format("      t=%.2fs: [%s|%s|%s] (%d recs)",
+                    f.t, f.raw[1] or "-", f.raw[2] or "-", f.raw[3] or "-", c))
+            end
+        end
+        error(missingCount .. " frames with missing recs")
+    end
+end)
+
+test("Balance: fresh start — must fill 3 recs every frame", function()
+    _G._mockForm = 5
+    DH._snoozed.force_of_nature = true
+    DH._snoozed.starfall = true
+    local frames, violations, count = simulateCombat("Bal fill", "balance", {
+        form = 5, duration = 30, frame_step = 0.005,
+    })
+    print("    " .. count .. " frames simulated")
+    local missingCount = 0
+    for _, f in ipairs(frames) do
+        local c = 0
+        for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+        if c < 3 then missingCount = missingCount + 1 end
+    end
+    print("    Frames with < 3 recs: " .. missingCount .. " / " .. count)
+    if missingCount > 0 then
+        local shown = 0
+        for _, f in ipairs(frames) do
+            local c = 0
+            for i = 1, 3 do if f.raw[i] then c = c + 1 end end
+            if c < 3 and shown < 5 then
+                shown = shown + 1
+                print(string.format("      t=%.2fs: [%s|%s|%s] (%d recs)",
+                    f.t, f.raw[1] or "-", f.raw[2] or "-", f.raw[3] or "-", c))
+            end
+        end
+        error(missingCount .. " frames with missing recs")
+    end
+end)
+
+test("Bear: fresh start — must fill 4 recs every frame", function()
+    _G._mockForm = 1
+    local frames, violations, count = simulateCombat("Bear fill", "feral_bear", {
+        form = 1, rage = 50, duration = 30, frame_step = 0.005,
+    })
+    print("    " .. count .. " frames simulated")
+    local missingCount = 0
+    for _, f in ipairs(frames) do
+        local c = 0
+        for i = 1, 4 do if f.raw[i] then c = c + 1 end end
+        if c < 3 then missingCount = missingCount + 1 end  -- At least 3
+    end
+    print("    Frames with < 3 recs: " .. missingCount .. " / " .. count)
+    if missingCount > 0 then
+        error(missingCount .. " frames with missing recs")
+    end
+end)
+
+test("Cat: Berserk + high energy = must show 3 Shreds", function()
+    _G._mockForm = 3
+    -- Berserk active, SR/Rip/Rake all healthy, 80 energy, 2 CP
+    -- Shred costs 21 during Berserk. 80 energy = 3 Shreds (21+21+21=63)
+    -- All 3 recs should be Shred
+    local s = makeState({
+        energy = 80, combo_points = 2,
+        talents = {
+            mangle = 1, berserk = 1, omen_of_clarity = 1, furor = 5,
+        },
+        glyphs = { omen_of_clarity = true },
+        buffs = {
+            berserk = { up = true, remains = 10, stacks = 0, count = 0, last_applied = 0 },
+            savage_roar = { up = true, remains = 20, stacks = 0, count = 0, last_applied = 0 },
+        },
+        debuffs = {
+            rip = { up = true, remains = 15, stacks = 0, count = 0 },
+            rake = { up = true, remains = 7, stacks = 0, count = 0 },
+            mangle = { up = true, remains = 50, stacks = 0, count = 0 },
+        },
+    })
+    applyToDHState(s)
+
+    -- Get rotation directly
+    local getRotation
+    for _, mode in ipairs(ns.registered.modes) do
+        if mode.key == "feral_cat" then getRotation = mode.data.rotation; break end
+    end
+    local recs = getRotation(DH)
+
+    print(string.format("    Got %d recs:", #recs))
+    for i, r in ipairs(recs) do
+        print(string.format("      Rec%d: %s", i, r.ability))
+    end
+
+    assert(#recs == 3, "Expected 3 recs, got " .. #recs)
+    -- All 3 should be shred (nothing else to do, energy for 3 shreds)
+    for i = 1, 3 do
+        assert(recs[i].ability == "shred",
+            "Rec" .. i .. " should be shred, got " .. tostring(recs[i].ability))
+    end
+end)
+
+test("Cat: Low energy mid-rotation = must still fill 3 recs", function()
+    _G._mockForm = 3
+    -- 25 energy, 0 CP, SR down, everything needs refresh
+    -- Should: wait for energy → SR or Shred → wait → next ability
+    local s = makeState({
+        energy = 25, combo_points = 0,
+        talents = {
+            mangle = 1, berserk = 1, omen_of_clarity = 1, furor = 5,
+        },
+        glyphs = { omen_of_clarity = true },
+    })
+    applyToDHState(s)
+
+    local getRotation
+    for _, mode in ipairs(ns.registered.modes) do
+        if mode.key == "feral_cat" then getRotation = mode.data.rotation; break end
+    end
+    local recs = getRotation(DH)
+
+    print(string.format("    Got %d recs:", #recs))
+    for i, r in ipairs(recs) do
+        print(string.format("      Rec%d: %s", i, r.ability))
+    end
+
+    assert(#recs >= 3, "Expected at least 3 recs, got " .. #recs)
+end)
+
+test("Cat: 0 energy, 0 CP, nothing up = must still fill 3 recs", function()
+    _G._mockForm = 3
+    DH._snoozed.berserk = true
+    local s = makeState({
+        energy = 0, combo_points = 0,
+        talents = {
+            mangle = 1, berserk = 1, omen_of_clarity = 1, furor = 5,
+        },
+        glyphs = { omen_of_clarity = true },
+        cooldowns = { tigers_fury = 20 },  -- TF on CD
+    })
+    applyToDHState(s)
+
+    local getRotation
+    for _, mode in ipairs(ns.registered.modes) do
+        if mode.key == "feral_cat" then getRotation = mode.data.rotation; break end
+    end
+    local recs = getRotation(DH)
+
+    print(string.format("    Got %d recs:", #recs))
+    for i, r in ipairs(recs) do
+        print(string.format("      Rec%d: %s", i, r.ability))
+    end
+
+    assert(#recs >= 3, "Expected at least 3 recs, got " .. #recs)
 end)
 
 -- ============================================================================
