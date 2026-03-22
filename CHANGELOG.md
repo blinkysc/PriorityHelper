@@ -2,6 +2,35 @@
 
 All notable changes to PriorityHelper will be documented in this file.
 
+## [1.2.0] - 2026-03-21
+
+### Added
+- Core `RunSimulation()` framework: generic sim loop that any class can use.
+  Class provides a priority function, core handles CD tracking, time
+  advancement, and recommendation building.
+- Priority function now receives current recommendations, enabling
+  tier-aware logic (e.g., Prot 969 always picks 6s ability before 9s)
+- Sim advances time to next ability when on CD, so abilities flow naturally
+  through Rec3 -> Rec2 -> Rec1 as cooldowns tick down
+- 5-minute combat simulation tests at 200Hz with 100 randomized CD configs
+
+### Fixed
+- Prot 969: 6s abilities (SoR/HotR) now ALWAYS take Rec1, matching wotlk
+  sim APL. Consecration can no longer jump into Rec1 when a 6s ability is
+  on cooldown.
+- Smoothing duplicate prevention: abilities can no longer appear in multiple
+  slots simultaneously
+- Divine Plea now appears when mana < 40% (was buried below all 9s abilities)
+- Minimap button detachable by MBB and similar addons (guard against double
+  creation, defer to PLAYER_LOGIN)
+
+### Changed
+- Prot rotation rewritten with simulation: predictions based on actual CD
+  tracking instead of snapshot queue
+- Ret priority order updated to match wotlk sim APL: Judge > CS > DS
+- Smoothing rewritten: forward-only placement prevents abilities from
+  moving backward in the display
+
 ## [1.1.7] - 2026-03-15
 
 ### Fixed
