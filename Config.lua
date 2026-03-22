@@ -104,12 +104,14 @@ end
 -- ============================================================================
 
 local function CreateMinimapButton()
+    if ns.MinimapButton then return ns.MinimapButton end
     local button = CreateFrame("Button", "PriorityHelperMinimapButton", Minimap)
     button:SetSize(31, 31)
     button:SetFrameStrata("MEDIUM")
     button:SetFrameLevel(8)
     button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     button:SetMovable(true)
+    button:SetClampedToScreen(true)
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:RegisterForDrag("LeftButton")
 
@@ -138,40 +140,84 @@ local function CreateMinimapButton()
         icon:SetTexture(activeMode.icon)
     end
 
-    -- Position around minimap
+    -- Position around minimap (attached mode)
     local function UpdatePosition(angle)
         local rad = math.rad(angle or 225)
         local x = math.cos(rad) * 80
         local y = math.sin(rad) * 80
         button:ClearAllPoints()
+        button:SetParent(Minimap)
         button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    end
+
+    -- Position freely on screen (detached mode)
+    local function UpdateDetachedPosition(x, y)
+        button:ClearAllPoints()
+        button:SetParent(UIParent)
+        button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+    end
+
+    -- Apply either attached or detached position
+    local function ApplyPosition()
+        local db = DH.db and DH.db.minimap
+        if db and db.detached and db.x and db.y then
+            UpdateDetachedPosition(db.x, db.y)
+        else
+            UpdatePosition(db and db.position or 225)
+        end
     end
 
     -- Dragging
     button:SetScript("OnDragStart", function(self)
         if DH.db and DH.db.minimap and DH.db.minimap.locked then return end
-        self:SetScript("OnUpdate", function(self)
-            local mx, my = Minimap:GetCenter()
-            local cx, cy = GetCursorPosition()
-            local scale = Minimap:GetEffectiveScale()
-            cx, cy = cx / scale, cy / scale
-            local angle = math.deg(math.atan2(cy - my, cx - mx))
-            if DH.db and DH.db.minimap then
-                DH.db.minimap.position = angle
-            end
-            UpdatePosition(angle)
-        end)
+        local db = DH.db and DH.db.minimap
+        if db and db.detached then
+            self:StartMoving()
+        else
+            self:SetScript("OnUpdate", function(self)
+                local mx, my = Minimap:GetCenter()
+                local cx, cy = GetCursorPosition()
+                local scale = Minimap:GetEffectiveScale()
+                cx, cy = cx / scale, cy / scale
+                local angle = math.deg(math.atan2(cy - my, cx - mx))
+                if db then
+                    db.position = angle
+                end
+                UpdatePosition(angle)
+            end)
+        end
     end)
 
     button:SetScript("OnDragStop", function(self)
+        local db = DH.db and DH.db.minimap
+        if db and db.detached then
+            self:StopMovingOrSizing()
+            local scale = self:GetEffectiveScale()
+            local cx, cy = self:GetCenter()
+            db.x = cx
+            db.y = cy
+        end
         self:SetScript("OnUpdate", nil)
     end)
 
-    -- Click: open dropdown
+    -- Click: left = dropdown, right = detach/attach toggle
     button:SetScript("OnClick", function(self, btn)
         GameTooltip:Hide()
-        UIDropDownMenu_Initialize(dropdownFrame, BuildDropdown, "MENU")
-        ToggleDropDownMenu(1, nil, dropdownFrame, self, 0, 0)
+        if btn == "RightButton" then
+            local db = DH.db and DH.db.minimap
+            if db then
+                db.detached = not db.detached
+                if not db.detached then
+                    db.x = nil
+                    db.y = nil
+                end
+                ApplyPosition()
+                DH:Print("Minimap button " .. (db.detached and "detached (drag freely)" or "attached to minimap"))
+            end
+        else
+            UIDropDownMenu_Initialize(dropdownFrame, BuildDropdown, "MENU")
+            ToggleDropDownMenu(1, nil, dropdownFrame, self, 0, 0)
+        end
     end)
 
     -- Tooltip
@@ -182,7 +228,13 @@ local function CreateMinimapButton()
         if activeMode then
             GameTooltip:AddLine("Mode: |cFF00FF00" .. activeMode.name .. "|r", 1, 1, 1)
         end
-        GameTooltip:AddLine("|cFFFFFFFFClick|r to select rotation mode", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("|cFFFFFFFFLeft-Click|r to select rotation mode", 0.7, 0.7, 0.7)
+        local db = DH.db and DH.db.minimap
+        if db and db.detached then
+            GameTooltip:AddLine("|cFFFFFFFFRight-Click|r to reattach to minimap", 0.7, 0.7, 0.7)
+        else
+            GameTooltip:AddLine("|cFFFFFFFFRight-Click|r to detach (free move)", 0.7, 0.7, 0.7)
+        end
         GameTooltip:Show()
     end)
 
@@ -192,9 +244,8 @@ local function CreateMinimapButton()
 
     ns.MinimapButton = button
 
-    -- Apply saved position
-    local pos = DH.db and DH.db.minimap and DH.db.minimap.position or 225
-    UpdatePosition(pos)
+    -- Apply saved position (attached or detached)
+    ApplyPosition()
 
     if DH.db and DH.db.minimap and DH.db.minimap.hide then
         button:Hide()
@@ -338,6 +389,9 @@ local configDefaults = {
         hide = false,
         locked = false,
         position = 225,
+        detached = false,
+        x = nil,
+        y = nil,
     },
     mode = nil,
 }
