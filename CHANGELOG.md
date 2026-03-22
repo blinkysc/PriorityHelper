@@ -2,6 +2,15 @@
 
 All notable changes to PriorityHelper will be documented in this file.
 
+## [1.6.0] - 2026-03-22
+
+### Added
+- **Hunter support**: Beast Mastery, Marksmanship, Survival rotation modes
+- BM: Bestial Wrath, Kill Command, Serpent Sting, Multi/Aimed/Arcane Shot, Steady Shot filler
+- MM: Chimera Shot (refreshes Serpent Sting), Aimed Shot, Improved Steady Shot proc awareness, Arcane Shot
+- Survival: Explosive Shot, Black Arrow (Lock and Load trigger), LnL stack consumption, Explosive/Arcane shared CD
+- All specs: Kill Shot execute phase, haste-adjusted Steady Shot cast time, glyph-aware CD reductions
+
 ## [1.5.0] - 2026-03-22
 
 ### Added

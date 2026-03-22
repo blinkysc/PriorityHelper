@@ -338,3 +338,4 @@ Rotations are based on:
 - **1.3.0** — Warlock added (Affliction, Demonology, Destruction), cast time awareness for caster rotations, haste-adjusted sim predictions
 - **1.4.0** — Shaman added (Enhancement, Elemental), shared shock CD handling, MW5 instant cast logic
 - **1.5.0** — Warrior added (Arms, Fury, Protection), stance awareness, rage estimation from weapon speed, proc-based priority
+- **1.6.0** — Hunter added (Beast Mastery, Marksmanship, Survival), Lock and Load proc handling, shared Explosive/Arcane CD
