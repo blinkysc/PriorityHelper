@@ -99,16 +99,22 @@ local retConfig = {
             return "holy_wrath"
         end
 
-        -- Nothing ready — return nearest FCFS ability (sim will wait for it)
+        -- Nothing ready — return nearest FCFS ability not already recommended
+        local function hasRec(key)
+            for _, r in ipairs(recs) do if r.ability == key then return true end end
+            return false
+        end
         local nearest, nearestCD = nil, 999
         local fcfs = { "judgement_of_wisdom", "crusader_strike" }
         if sim.has_ds then table.insert(fcfs, "divine_storm") end
         table.insert(fcfs, "consecration")
         for _, key in ipairs(fcfs) do
-            local cd = sim:remains(key)
-            if cd < nearestCD then
-                nearest = key
-                nearestCD = cd
+            if not hasRec(key) then
+                local cd = sim:remains(key)
+                if cd < nearestCD then
+                    nearest = key
+                    nearestCD = cd
+                end
             end
         end
         return nearest
@@ -206,18 +212,26 @@ local protConfig = {
             return "judgement_of_wisdom"
         end
 
-        -- No 9s ability ready. Pick the next 6s ability (even if on CD).
-        local sor = sim:remains("shield_of_righteousness")
-        local hotr = sim:remains("hammer_of_the_righteous")
-        if not hasRec("shield_of_righteousness") and not hasRec("hammer_of_the_righteous") then
-            return sor <= hotr and "shield_of_righteousness" or "hammer_of_the_righteous"
-        elseif not hasRec("shield_of_righteousness") then
-            return "shield_of_righteousness"
-        elseif not hasRec("hammer_of_the_righteous") then
-            return "hammer_of_the_righteous"
+        -- No 9s ability ready — return the nearest 9s on CD.
+        -- The sim will wait for it, so it shows up in Rec3 approaching.
+        local nearest9s, nearest9sCD = nil, 999
+        local nines = { "consecration", "holy_shield", "judgement_of_wisdom" }
+        if sim.in_execute then table.insert(nines, 1, "hammer_of_wrath") end
+        for _, key in ipairs(nines) do
+            if not hasRec(key) then
+                local cd = sim:remains(key)
+                if cd < nearest9sCD then
+                    nearest9s = key
+                    nearest9sCD = cd
+                end
+            end
         end
+        if nearest9s then return nearest9s end
 
-        -- Both 6s already recommended, wait for any 9s
+        -- Absolute fallback: pick whichever 6s isn't recommended yet
+        if not hasRec("shield_of_righteousness") then return "shield_of_righteousness" end
+        if not hasRec("hammer_of_the_righteous") then return "hammer_of_the_righteous" end
+
         return nil
     end,
     onCast = function(sim, key)
