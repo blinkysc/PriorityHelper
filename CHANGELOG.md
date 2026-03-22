@@ -2,6 +2,17 @@
 
 All notable changes to PriorityHelper will be documented in this file.
 
+## [1.5.0] - 2026-03-22
+
+### Added
+- **Warrior support**: Arms (DPS), Fury (DPS), Protection (Tank) rotation modes
+- Arms: Mortal Strike, Taste for Blood Overpower proc, Sudden Death Execute, Rend maintenance, Slam filler
+- Fury: Bloodthirst, Whirlwind, Bloodsurge instant Slam proc, Execute phase, Rend
+- Protection: Shield Slam (Sword and Board procs), Revenge, Shockwave, Thunder Clap/Demo Shout maintenance, Devastate filler
+- Stance awareness: recommends correct stance (Battle/Berserker/Defensive) via GetShapeshiftForm form handlers
+- Rage estimation from auto-attacks using UnitAttackSpeed for accurate REC1-3 lookahead
+- Prot tanks get bonus rage income estimate for damage taken
+
 ## [1.4.0] - 2026-03-22
 
 ### Added
