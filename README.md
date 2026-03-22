@@ -36,6 +36,10 @@ Priority rotation helper for World of Warcraft 3.3.5a (WotLK). Shows the next 3 
 
 - World of Warcraft 3.3.5a client
 
+## Credits
+
+Inspired by [Hekili](https://github.com/Hekili/hekili) — the gold standard for priority rotation helpers in retail WoW.
+
 ## License
 
 GPL-3.0
