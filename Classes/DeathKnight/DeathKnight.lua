@@ -26,6 +26,7 @@ local SPELLS = {
     OBLITERATE = 51425,
     FROST_STRIKE = 55268,
     HOWLING_BLAST = 51411,
+    UNBREAKABLE_ARMOR = 51271,
 
     -- Unholy
     SCOURGE_STRIKE = 55271,
@@ -101,6 +102,11 @@ class.abilities = {
         id = SPELLS.HOWLING_BLAST,
         name = "Howling Blast",
         texture = 237533,
+    },
+    unbreakable_armor = {
+        id = SPELLS.UNBREAKABLE_ARMOR,
+        name = "Unbreakable Armor",
+        texture = 237510,
     },
 
     -- Unholy
@@ -236,6 +242,7 @@ for key, ability in pairs(class.abilities) do
     end
 end
 
+---Returns icon texture path for an ability key, with fallback question mark icon.
 function ns.GetAbilityTexture(key)
     local ability = class.abilities[key]
     if ability then
@@ -255,6 +262,7 @@ end
 DH:RegisterGCDSpell(SPELLS.ICY_TOUCH)
 
 -- Presence form handlers (GetShapeshiftForm: 1=Blood, 2=Frost, 3=Unholy)
+---Clears presence form auras before applying the currently active presence.
 local function ResetPresences(state)
     state.buff.blood_presence.expires = 0
     state.buff.blood_presence._isForm = true
@@ -289,8 +297,10 @@ DH:RegisterMeleeAbilities({
 DH:RegisterBuffs({
     "blood_presence", "frost_presence", "unholy_presence",
     "horn_of_winter",
+    "strength_of_earth_totem",
     "killing_machine",
     "freezing_fog",     -- Rime proc (free Howling Blast)
+    "unbreakable_armor",
     "sudden_doom",      -- Free Death Coil proc
     "bone_shield",
     "vampiric_blood",
@@ -316,6 +326,7 @@ DH:RegisterCooldowns({
     obliterate = 51425,
     frost_strike = 55268,
     howling_blast = 51411,
+    unbreakable_armor = 51271,
     scourge_strike = 55271,
     death_coil = 49895,
     heart_strike = 55262,
@@ -436,14 +447,14 @@ DH:RegisterGlyphs({
     [58631] = "icy_touch",
     [58657] = "obliterate",
     [58625] = "frost_strike",
+    [58647] = "frost_strike",
     [63331] = "howling_blast",
     [58642] = "scourge_strike",
     [58677] = "death_coil",
     [58669] = "death_strike",
     [58671] = "heart_strike",
     [58680] = "rune_strike",
-    [63334] = "dancing_rune_weapon",
-    [58673] = "disease",
+    [63330] = "dancing_rune_weapon",
     [63334] = "disease",
     [58676] = "horn_of_winter",
 })
@@ -454,8 +465,18 @@ DH:RegisterBuffMap({
     [48266] = "frost_presence",
     [48265] = "unholy_presence",
     [57623] = "horn_of_winter",
+    -- Strength of Earth (all ranks) so HoW suppression works regardless of aura rank
+    [8076] = "strength_of_earth_totem",
+    [8160] = "strength_of_earth_totem",
+    [8161] = "strength_of_earth_totem",
+    [10442] = "strength_of_earth_totem",
+    [25361] = "strength_of_earth_totem",
+    [25528] = "strength_of_earth_totem",
+    [57622] = "strength_of_earth_totem",
+    [58643] = "strength_of_earth_totem",
     [51124] = "killing_machine",
     [59052] = "freezing_fog",
+    [51271] = "unbreakable_armor",
     [81340] = "sudden_doom",
     [49222] = "bone_shield",
     [55233] = "vampiric_blood",
@@ -479,6 +500,11 @@ DH:RegisterDebuffNamePatterns({
     { "blood plague", "blood_plague" },
     { "ebon plague", "ebon_plague" },
     { "crypt fever", "crypt_fever" },
+})
+
+-- Name-based fallback for buffs whose spell IDs vary by rank/talent
+DH:RegisterBuffNamePatterns({
+    { "strength of earth", "strength_of_earth_totem" },
 })
 
 DH:RegisterExternalDebuffMap({})
@@ -529,6 +555,7 @@ DH:RegisterSnoozeable("empower_rune_weapon", 60)
 -- Rune slots: 1-2 Blood, 3-4 Unholy, 5-6 Frost (or Death runes)
 -- ============================================================================
 
+---Returns counts of ready blood, frost, unholy, and death runes.
 function ns.GetRuneCounts()
     local blood, frost, unholy, death = 0, 0, 0, 0
     for i = 1, 6 do

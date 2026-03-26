@@ -480,6 +480,7 @@ ns.registered = {
     externalDebuffMap = {},  -- { [spellId] = debuffKey, ... }
     debuffNamePatterns = {},  -- { { pattern, key }, ... } for name-based fallback
     externalDebuffNamePatterns = {},  -- same for external debuffs
+    buffNamePatterns = {},  -- { { pattern, key }, ... } for name-based buff fallback
     combatLogHandlers = {},  -- Functions called on COMBAT_LOG_EVENT_UNFILTERED
     formHandlers = {},    -- { formId = { update = fn, spec = fn }, ... }
     specDetector = nil,   -- Function that returns current spec string
@@ -549,6 +550,13 @@ end
 function DH:RegisterDebuffNamePatterns(patterns)
     for _, data in ipairs(patterns) do
         table.insert(ns.registered.debuffNamePatterns, data)
+    end
+end
+
+-- Register buff name patterns for fallback matching
+function DH:RegisterBuffNamePatterns(patterns)
+    for _, data in ipairs(patterns) do
+        table.insert(ns.registered.buffNamePatterns, data)
     end
 end
 
