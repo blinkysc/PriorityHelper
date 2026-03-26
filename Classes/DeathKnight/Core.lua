@@ -88,7 +88,7 @@ local function shouldReserveDiseaseRefreshRune(sim, pendingDeathCost)
     end
 
     local availableBD = (sim.blood or 0) + (sim.death or 0)
-    if availableBD - (pendingDeathCost or 0) > 1 then
+    if availableBD - (pendingDeathCost or 0) >= 1 then
         return false
     end
 
@@ -360,6 +360,7 @@ local bloodConfig = {
             sim.blood = 2
             sim.frost = 2
             sim.unholy = 2
+            sim.death = 0
             sim.rp = math.min(sim.rp_max, sim.rp + 25)
             sim.rune_recovery = { blood = {}, frost = {}, unholy = {}, death = {} }
         elseif key == "pestilence" then
@@ -566,7 +567,7 @@ local frostConfig = {
 
         -- Blood Strike (Blood rune spender, converts to Death runes)
         -- Keep one Blood/Death rune banked if Glyph of Disease refresh is approaching.
-        if canAfford(sim, 1, 0, 0) and not shouldReserveDiseaseRefreshRune(sim) then
+        if canAfford(sim, 1, 0, 0) and not shouldReserveDiseaseRefreshRune(sim, 1) then
             return "blood_strike"
         end
 
@@ -602,7 +603,12 @@ local frostConfig = {
             sim.ff_up = true
             sim.ff_remains = sim.disease_duration
         elseif key == "unbreakable_armor" then
-            spendRunesTracked(sim, 0, 1, 0, 0)
+            if sim.death > 0 then
+                sim.death = sim.death - 1
+                queueRuneRecovery(sim, "death")
+            else
+                spendRunesTracked(sim, 0, 1, 0, 0)
+            end
             sim.rp = math.min(sim.rp_max, sim.rp + 10)
             sim.unbreakable_armor_up = true
         elseif key == "blood_strike" then
@@ -610,17 +616,23 @@ local frostConfig = {
         elseif key == "frost_strike" then
             spendRP(sim, sim.fs_cost)
         elseif key == "blood_tap" then
-            if sim.blood > 0 then
+            local hasDepletedBlood = sim.rune_recovery and sim.rune_recovery.blood
+                and #sim.rune_recovery.blood > 0
+            if hasDepletedBlood then
+                -- Activate depleted Blood rune as Death (preserves ready Blood for Pestilence)
+                table.remove(sim.rune_recovery.blood, 1)
+                sim.death = sim.death + 1
+            elseif sim.blood > 0 then
                 sim.blood = sim.blood - 1
                 sim.death = sim.death + 1
             else
-                -- Activate a depleted Blood rune as Death
                 sim.death = sim.death + 1
             end
         elseif key == "empower_rune_weapon" then
             sim.blood = 2
             sim.frost = 2
             sim.unholy = 2
+            sim.death = 0
             sim.rp = math.min(sim.rp_max, sim.rp + 25)
             sim.rune_recovery = { blood = {}, frost = {}, unholy = {}, death = {} }
         elseif key == "pestilence" then
@@ -799,6 +811,7 @@ local unholyConfig = {
             sim.blood = 2
             sim.frost = 2
             sim.unholy = 2
+            sim.death = 0
             sim.rp = math.min(sim.rp_max, sim.rp + 25)
             sim.rune_recovery = { blood = {}, frost = {}, unholy = {}, death = {} }
         elseif key == "pestilence" then
