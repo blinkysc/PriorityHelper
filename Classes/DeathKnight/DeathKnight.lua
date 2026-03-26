@@ -502,6 +502,11 @@ DH:RegisterDebuffNamePatterns({
     { "crypt fever", "crypt_fever" },
 })
 
+-- Name-based fallback for buffs whose spell IDs vary by rank/talent
+DH:RegisterBuffNamePatterns({
+    { "strength of earth", "strength_of_earth_totem" },
+})
+
 DH:RegisterExternalDebuffMap({})
 DH:RegisterExternalDebuffNamePatterns({})
 

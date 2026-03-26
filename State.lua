@@ -434,6 +434,18 @@ function state:UpdateBuffs()
         if not name then break end
 
         local key = ns.registered.buffMap[spellId]
+
+        -- Fallback to name patterns
+        if not key and name then
+            local lowerName = name:lower()
+            for _, pattern in ipairs(ns.registered.buffNamePatterns) do
+                if lowerName:find(pattern[1]) then
+                    key = pattern[2]
+                    break
+                end
+            end
+        end
+
         if key and self.buff[key] then
             -- Permanent buffs (Righteous Fury, auras, etc.) have expirationTime = 0
             if not expirationTime or expirationTime == 0 then

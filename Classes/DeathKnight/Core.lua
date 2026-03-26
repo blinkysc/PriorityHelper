@@ -535,15 +535,15 @@ local frostConfig = {
             return "obliterate"
         end
 
-            -- Empower Rune Weapon: fire before Frost Strike/Blood Strike when F/U/Blood are all gone
-            -- and we cannot reach an Obliterate (e.g. post-Pestilence opener: F:0,U:0,B:0,D:1 left).
-            -- Note: live updates can still show ERW briefly in slot 2/3 if an earlier projection
-            -- is consumed by a higher-priority GCD spender before ERW reaches the top slot.
-            if sim.frost == 0 and sim.unholy == 0 and sim.blood == 0
-                and not canAfford(sim, 0, 1, 1)
-                and sim:ready("empower_rune_weapon") and not DH:IsSnoozed("empower_rune_weapon") then
-                return "empower_rune_weapon"
-            end
+        -- Empower Rune Weapon: fire before Frost Strike/Blood Strike when F/U/Blood are all gone
+        -- and we cannot reach an Obliterate (e.g. post-Pestilence opener: F:0,U:0,B:0,D:1 left).
+        -- Note: live updates can still show ERW briefly in slot 2/3 if an earlier projection
+        -- is consumed by a higher-priority GCD spender before ERW reaches the top slot.
+        if sim.frost == 0 and sim.unholy == 0 and sim.blood == 0
+            and not canAfford(sim, 0, 1, 1)
+            and sim:ready("empower_rune_weapon") and not DH:IsSnoozed("empower_rune_weapon") then
+            return "empower_rune_weapon"
+        end
 
         -- Frost Strike (RP dump)
         if sim.has_frost_strike and sim.rp >= sim.fs_cost then
@@ -594,7 +594,6 @@ local frostConfig = {
             sim.bp_remains = sim.disease_duration
         elseif key == "obliterate" then
             spendRunesTracked(sim, 0, 1, 1, 15)
-            sim.killing_machine = false
         elseif key == "howling_blast" then
             if not sim.rime then
                 spendRunesTracked(sim, 0, 1, 1, 15)
@@ -624,8 +623,6 @@ local frostConfig = {
                 sim.death = sim.death + 1
             elseif sim.blood > 0 then
                 sim.blood = sim.blood - 1
-                sim.death = sim.death + 1
-            else
                 sim.death = sim.death + 1
             end
         elseif key == "empower_rune_weapon" then
